@@ -47,15 +47,19 @@ class Generator:
         self.stream.write("\n")
 
 with Generator("build.ninja") as gen:
+    gen.write_var("preproc", "build/tools/preproc")
+    gen.write_var("gbagfx", "build/tools/gbagfx")
     gen.write_var("gcc", "arm-none-eabi-gcc")
     gen.write_var("as", "arm-none-eabi-as")
     gen.write_var("ld", "arm-none-eabi-ld")
-    gen.write_var("preproc", "build/tools/preproc")
-    gen.write_var("gbagfx", "build/tools/gbagfx")
     gen.break_line()
+
     gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=aapcs -O2 -fno-toplevel-reorder")
     gen.write_var("asflags", "-mthumb -mthumb-interwork -march=armv4t -mcpu=arm7tdmi")
     gen.write_var("ldflags", "-T linker.ld")
+    gen.break_line()
+
+    gen.write_rule("gfx", command="$gbagfx $in $out")
     gen.break_line()
 
     gen.write_rule("cc", command="$preproc $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -c -o $out -", depfile="$out.d")
@@ -64,19 +68,7 @@ with Generator("build.ninja") as gen:
     gen.write_rule("asm", command="$as $asflags -o $out $in")
     gen.break_line()
 
-    gen.write_rule("gfx", command="$gbagfx $in $out")
-    gen.break_line()
-
     gen.write_rule("link", command="$ld $ldflags -o $out $in")
-    gen.break_line()
-
-    c_obj_files = []
-    c_files = glob.glob("src/**/*.c", recursive=True)
-    for c_file in c_files:
-        obj_file = os.path.join("build", c_file) + ".o"
-        gen.write_build("cc", obj_file, c_file)
-        c_obj_files.append(obj_file)
-
     gen.break_line()
 
     png_files = glob.glob("graphics/**/*.png", recursive=True)
@@ -96,7 +88,14 @@ with Generator("build.ninja") as gen:
         gen.write_build("gfx", out_1bpp_lz_file, out_1bpp_file)
         gen.write_build("gfx", out_4bpp_lz_file, out_4bpp_file)
         gen.write_build("gfx", out_8bpp_lz_file, out_8bpp_file)
+    gen.break_line()
 
+    c_obj_files = []
+    c_files = glob.glob("src/**/*.c", recursive=True)
+    for c_file in c_files:
+        obj_file = os.path.join("build", c_file) + ".o"
+        gen.write_build("cc", obj_file, c_file)
+        c_obj_files.append(obj_file)
     gen.break_line()
 
     asm_obj_files = []
@@ -105,6 +104,7 @@ with Generator("build.ninja") as gen:
         out_file = os.path.join("build", asm_file) + ".o"
         gen.write_build("asm", out_file, asm_file)
         asm_obj_files.append(out_file)
+    gen.break_line()
 
     obj_files = c_obj_files + asm_obj_files
     gen.write_build_list("link", ["build/linked.o"], obj_files)
