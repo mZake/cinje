@@ -70,10 +70,12 @@ with Generator("build.ninja") as gen:
     gen.write_rule("link", command="$ld $ldflags -o $out $in")
     gen.break_line()
 
+    c_obj_files = []
     c_files = glob.glob("src/**/*.c", recursive=True)
     for c_file in c_files:
         obj_file = os.path.join("build", c_file) + ".o"
         gen.write_build("cc", obj_file, c_file)
+        c_obj_files.append(obj_file)
 
     gen.break_line()
 
@@ -97,13 +99,12 @@ with Generator("build.ninja") as gen:
 
     gen.break_line()
 
+    asm_obj_files = []
     asm_files = glob.glob("asm/**/*.s", recursive=True)
     for asm_file in asm_files:
         out_file = os.path.join("build", asm_file) + ".o"
         gen.write_build("asm", out_file, asm_file)
+        asm_obj_files.append(out_file)
 
-    c_obj_files = glob.glob("build/src/**/*.o", recursive=True)
-    asm_obj_files = glob.glob("build/asm/**/*.o", recursive=True)
     obj_files = c_obj_files + asm_obj_files
-
     gen.write_build_list("link", ["build/linked.o"], obj_files)
