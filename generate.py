@@ -35,11 +35,15 @@ class Generator:
 
 with Generator("build.ninja") as gen:
     gen.write_var("gcc", "arm-none-eabi-gcc")
+    gen.write_var("as", "arm-none-eabi-as")
     gen.write_var("preproc", "build/tools/preproc")
     gen.write_var("gbagfx", "build/tools/gbagfx")
     gen.break_line()
 
     gen.write_rule("cc", command="$preproc $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -c -o $out -", depfile="$out.d")
+    gen.break_line()
+
+    gen.write_rule("asm", command="$as $asflags -o $out $in")
     gen.break_line()
 
     gen.write_rule("gfx", command="$gbagfx $in $out")
@@ -69,3 +73,10 @@ with Generator("build.ninja") as gen:
         gen.write_build("gfx", out_1bpp_lz_file, out_1bpp_file)
         gen.write_build("gfx", out_4bpp_lz_file, out_4bpp_file)
         gen.write_build("gfx", out_8bpp_lz_file, out_8bpp_file)
+
+    gen.break_line()
+
+    asm_files = glob.glob("asm/**/*.s", recursive=True)
+    for asm_file in asm_files:
+        out_file = os.path.join("build", asm_file) + ".o"
+        gen.write_build("asm", out_file, asm_file)
