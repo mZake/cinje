@@ -1,3 +1,15 @@
 # Directories
-/.build
+/build
 
+# Ninja
+build.ninja
+.ninja_log
+
+# Graphics
+*.1bpp
+*.4bpp
+*.8bpp
+*.1bpp.lz
+*.4bpp.lz
+*.8bpp.lz
+*.gbapal
