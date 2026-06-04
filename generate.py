@@ -2,6 +2,7 @@
 
 import glob
 import os
+import sys
 
 class Generator:
     def __init__(self, file_path: str):
@@ -52,6 +53,8 @@ with Generator("build.ninja") as gen:
     gen.write_var("gcc", "arm-none-eabi-gcc")
     gen.write_var("as", "arm-none-eabi-as")
     gen.write_var("ld", "arm-none-eabi-ld")
+    gen.write_var("objcopy", "arm-none-eabi-objcopy")
+    gen.write_var("python", sys.executable)
     gen.break_line()
 
     gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=aapcs -O2 -fno-toplevel-reorder")
@@ -68,7 +71,7 @@ with Generator("build.ninja") as gen:
     gen.write_rule("asm", command="$as $asflags -o $out $in")
     gen.break_line()
 
-    gen.write_rule("link", command="$ld $ldflags -o $out $in")
+    gen.write_rule("link", command="$ld $ldflags -o $out $in && $objcopy -O binary $out $out.bin && $python insert.py")
     gen.break_line()
 
     png_files = glob.glob("graphics/**/*.png", recursive=True)

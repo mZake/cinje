@@ -13,3 +13,6 @@ build.ninja
 *.4bpp.lz
 *.8bpp.lz
 *.gbapal
+
+# ROMs
+*.gba
