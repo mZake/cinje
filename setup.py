@@ -32,4 +32,4 @@ for name in os.listdir(tools_src_dir):
     exe_name = name + exe_suffix
     src_exe = os.path.join(src_dir, exe_name)
     dest_exe = os.path.join(tools_build_dir, exe_name)
-    shutil.copyfile(src_exe, dest_exe)
+    shutil.copy2(src_exe, dest_exe)
