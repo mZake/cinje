@@ -53,6 +53,8 @@ with Generator("build.ninja") as gen:
     gen.write_var("preproc", "build/tools/preproc")
     gen.write_var("gbagfx", "build/tools/gbagfx")
     gen.break_line()
+    gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=aapcs -O2 -fno-toplevel-reorder")
+    gen.write_var("asflags", "-mthumb -mthumb-interwork -march=armv4t -mcpu=arm7tdmi")
     gen.write_var("ldflags", "-T linker.ld")
     gen.break_line()
 
