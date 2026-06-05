@@ -96,7 +96,7 @@ with Generator("build.ninja") as gen:
         gen.write_build("gfx", out_1bpp_lz_file, out_1bpp_file)
         gen.write_build("gfx", out_4bpp_lz_file, out_4bpp_file)
         gen.write_build("gfx", out_8bpp_lz_file, out_8bpp_file)
-    gen.break_line()
+    if len(png_files) > 0: gen.break_line()
 
     c_obj_files = []
     c_files = glob.glob("src/**/*.c", recursive=True)
@@ -104,7 +104,7 @@ with Generator("build.ninja") as gen:
         obj_file = os.path.join("build", c_file) + ".o"
         gen.write_build("cc", obj_file, c_file)
         c_obj_files.append(obj_file)
-    gen.break_line()
+    if len(c_files): gen.break_line()
 
     asm_obj_files = []
     asm_files = glob.glob("asm/**/*.s", recursive=True)
@@ -112,7 +112,7 @@ with Generator("build.ninja") as gen:
         out_file = os.path.join("build", asm_file) + ".o"
         gen.write_build("asm", out_file, asm_file)
         asm_obj_files.append(out_file)
-    gen.break_line()
+    if len(asm_files) > 0: gen.break_line()
 
     obj_files = c_obj_files + asm_obj_files
     gen.write_build_list("link", ["build/linked.o"], obj_files)
