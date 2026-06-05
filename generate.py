@@ -56,25 +56,22 @@ with Generator("build.ninja") as gen:
     gen.write_var("preproc", "build/tools/preproc")
     gen.write_var("gbagfx", "build/tools/gbagfx")
     gen.write_var("gcc", "arm-none-eabi-gcc")
-    gen.write_var("cpp", "arm-none-eabi-cpp")
-    gen.write_var("as", "arm-none-eabi-as")
     gen.write_var("ld", "arm-none-eabi-ld")
     gen.write_var("objcopy", "arm-none-eabi-objcopy")
     gen.write_var("python", sys.executable)
     gen.break_line()
 
     gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=aapcs -O2 -fno-toplevel-reorder")
-    gen.write_var("asflags", "-mthumb -mthumb-interwork -march=armv4t -mcpu=arm7tdmi")
     gen.write_var("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{address_to_insert:08X}")
     gen.break_line()
 
     gen.write_rule("gfx", command="$gbagfx $in $out")
     gen.break_line()
 
-    gen.write_rule("cc", command="$cpp $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -c -o $out -", depfile="$out.d")
+    gen.write_rule("cc", command="$gcc -E $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -c -o $out -", depfile="$out.d")
     gen.break_line()
 
-    gen.write_rule("asm", command="$as $asflags -o $out $in")
+    gen.write_rule("asm", command="$gcc $cflags -c -o $out $in")
     gen.break_line()
 
     gen.write_rule("link", command="$ld $ldflags -o $out $in && $objcopy -O binary $out $out.bin && $python insert.py")
