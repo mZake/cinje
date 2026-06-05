@@ -56,6 +56,7 @@ with Generator("build.ninja") as gen:
     gen.write_var("preproc", "build/tools/preproc")
     gen.write_var("gbagfx", "build/tools/gbagfx")
     gen.write_var("gcc", "arm-none-eabi-gcc")
+    gen.write_var("cpp", "arm-none-eabi-cpp")
     gen.write_var("as", "arm-none-eabi-as")
     gen.write_var("ld", "arm-none-eabi-ld")
     gen.write_var("objcopy", "arm-none-eabi-objcopy")
@@ -70,7 +71,7 @@ with Generator("build.ninja") as gen:
     gen.write_rule("gfx", command="$gbagfx $in $out")
     gen.break_line()
 
-    gen.write_rule("cc", command="$preproc $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -c -o $out -", depfile="$out.d")
+    gen.write_rule("cc", command="$cpp $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -c -o $out -", depfile="$out.d")
     gen.break_line()
 
     gen.write_rule("asm", command="$as $asflags -o $out $in")
