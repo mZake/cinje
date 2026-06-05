@@ -61,7 +61,7 @@ with Generator("build.ninja") as gen:
     gen.write_var("python", sys.executable)
     gen.break_line()
 
-    gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=aapcs -O2 -fno-toplevel-reorder")
+    gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -O2 -fno-toplevel-reorder")
     gen.write_var("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{address_to_insert:08X}")
     gen.break_line()
 
