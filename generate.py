@@ -4,6 +4,9 @@ import glob
 import os
 import sys
 
+# Change this if needed
+offset_to_insert = 0x1400000
+
 class Generator:
     def __init__(self, file_path: str):
         self.file_path = file_path
@@ -47,6 +50,8 @@ class Generator:
     def break_line(self):
         self.stream.write("\n")
 
+address_to_insert = 0x8000000 + offset_to_insert
+
 with Generator("build.ninja") as gen:
     gen.write_var("preproc", "build/tools/preproc")
     gen.write_var("gbagfx", "build/tools/gbagfx")
@@ -59,7 +64,7 @@ with Generator("build.ninja") as gen:
 
     gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=aapcs -O2 -fno-toplevel-reorder")
     gen.write_var("asflags", "-mthumb -mthumb-interwork -march=armv4t -mcpu=arm7tdmi")
-    gen.write_var("ldflags", "-T linker.ld")
+    gen.write_var("ldflags", f"-T linker.ld --defsym=BLOB_BEGIN=0x{address_to_insert:08X}")
     gen.break_line()
 
     gen.write_rule("gfx", command="$gbagfx $in $out")
