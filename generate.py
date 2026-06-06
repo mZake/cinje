@@ -68,7 +68,7 @@ with Generator("build.ninja") as gen:
     gen.write_rule("gfx", command="$gbagfx $in $out")
     gen.break_line()
 
-    gen.write_rule("cc", command="$gcc -E $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -Iinclude -xc -c -o $out -", depfile="$out.d")
+    gen.write_rule("cc", command="$gcc -Iinclude -E $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -c -o $out -", depfile="$out.d")
     gen.break_line()
 
     gen.write_rule("asm", command="$gcc $cflags -Iasm -c -o $out $in")
