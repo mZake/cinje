@@ -96,6 +96,12 @@ with Generator("build.ninja") as gen:
         gen.write_build("gfx", out_8bpp_lz_file, out_8bpp_file)
     if len(png_files) > 0: gen.break_line()
 
+    bin_files = glob.glob("graphics/**/*.bin", recursive=True)
+    for bin_file in bin_files:
+        out_lz_file = bin_file + ".lz"
+        gen.write_build("gfx", out_lz_file, bin_file)
+    if len(bin_files) > 0: gen.break_line()
+
     c_obj_files = []
     c_files = glob.glob("src/**/*.c", recursive=True)
     for c_file in c_files:
