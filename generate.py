@@ -68,10 +68,10 @@ with Generator("build.ninja") as gen:
     gen.write_rule("gfx", command="$gbagfx $in $out")
     gen.break_line()
 
-    gen.write_rule("cc", command="$gcc -E $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -c -o $out -", depfile="$out.d")
+    gen.write_rule("cc", command="$gcc -E $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -Iinclude -xc -c -o $out -", depfile="$out.d")
     gen.break_line()
 
-    gen.write_rule("asm", command="$gcc $cflags -c -o $out $in")
+    gen.write_rule("asm", command="$gcc $cflags -Iasm -c -o $out $in")
     gen.break_line()
 
     gen.write_rule("link", command="$ld $ldflags -o $out $in && $objcopy -O binary $out $out.bin && $python insert.py")
