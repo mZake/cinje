@@ -8,6 +8,8 @@ import sys
 
 # Change this if needed
 offset_to_insert = 0x1400000
+base_rom_file = "base.gba"
+out_rom_file = "out.gba"
 
 class Generator:
     def __init__(self, file_path: str):

@@ -6,10 +6,7 @@ import os
 import shutil
 import sys
 
-from generate import offset_to_insert
-
-base_rom_file = "base.gba"
-out_rom_file = "out.gba"
+from generate import offset_to_insert, base_rom_file, out_rom_file
 
 if not os.path.exists(base_rom_file):
     print(f"Error: {base_rom_file} not found")
