@@ -11,6 +11,13 @@ offset_to_insert = 0x1400000
 base_rom_file = "base.gba"
 out_rom_file = "out.gba"
 
+ASM_DIR = "asm"
+BUILD_DIR = "build"
+GFX_DIR = "graphics"
+INC_DIR = "include"
+SRC_DIR = "src"
+TOOLS_DIR = "tools"
+
 class Generator:
     def __init__(self, file_path: str):
         self.file_path = file_path
@@ -57,20 +64,18 @@ def build_tools():
     # Required for MinGW, MSYS2 and Cygwin
     exe_suffix = ".exe" if os.getenv("OS") == "Windows_NT" else ""
 
-    tools_src_dir = "tools"
-    tools_build_dir = "build/tools"
-
-    if not os.path.exists(tools_src_dir):
+    if not os.path.exists(TOOLS_DIR):
         print("Error: tools directory not found")
         sys.exit(1)
-    if not os.path.isdir(tools_src_dir):
+    if not os.path.isdir(TOOLS_DIR):
         print("Error: tools is not a directory")
         sys.exit(1)
 
-    os.makedirs(tools_build_dir, exist_ok=True)
+    BIN_DIR = os.path.join(BUILD_DIR, TOOLS_DIR)
+    os.makedirs(BIN_DIR, exist_ok=True)
 
-    for name in os.listdir(tools_src_dir):
-        src_dir = os.path.join(tools_src_dir, name)
+    for name in os.listdir(TOOLS_DIR):
+        src_dir = os.path.join(TOOLS_DIR, name)
         if not os.path.isdir(src_dir):
             continue
 
@@ -80,7 +85,7 @@ def build_tools():
 
         exe_name = name + exe_suffix
         src_exe = os.path.join(src_dir, exe_name)
-        dest_exe = os.path.join(tools_build_dir, exe_name)
+        dest_exe = os.path.join(BIN_DIR, exe_name)
         shutil.copy2(src_exe, dest_exe)
 
 def change_file_ext(file: str, ext: str) -> str:
@@ -89,7 +94,7 @@ def change_file_ext(file: str, ext: str) -> str:
 def collect_gfx_files():
     build_jobs = []
 
-    files_png = glob.glob("graphics/**/*.png", recursive=True)
+    files_png = glob.glob(f"{GFX_DIR}/**/*.png", recursive=True)
     files_png.sort()
     for file_png in files_png:
         file_1bpp = change_file_ext(file_png, ".1bpp")
@@ -108,7 +113,7 @@ def collect_gfx_files():
         build_jobs.append((file_4bpp, file_4bpp_lz))
         build_jobs.append((file_8bpp, file_8bpp_lz))
 
-    files_bin = glob.glob("graphics/**/*.bin", recursive=True)
+    files_bin = glob.glob(f"{GFX_DIR}/**/*.bin", recursive=True)
     files_bin.sort()
     for file_bin in files_bin:
         file_bin_lz = change_file_ext(file_bin, ".bin.lz")
@@ -119,11 +124,11 @@ def collect_gfx_files():
 def collect_c_files() -> tuple:
     files_out = []
 
-    files_in = glob.glob("src/**/*.c", recursive=True)
+    files_in = glob.glob(f"{SRC_DIR}/**/*.c", recursive=True)
     files_in.sort()
     for file_in in files_in:
         file_out = change_file_ext(file_in, ".o")
-        file_out = os.path.join("build", file_out)
+        file_out = os.path.join(BUILD_DIR, file_out)
         files_out.append(file_out)
 
     return (files_in, files_out)
@@ -131,11 +136,11 @@ def collect_c_files() -> tuple:
 def collect_asm_files() -> tuple:
     files_out = []
 
-    files_in = glob.glob("asm/**/*.s", recursive=True)
+    files_in = glob.glob(f"{ASM_DIR}/**/*.s", recursive=True)
     files_in.sort()
     for file_in in files_in:
         file_out = change_file_ext(file_in, ".o")
-        file_out = os.path.join("build", file_out)
+        file_out = os.path.join(BUILD_DIR, file_out)
         files_out.append(file_out)
 
     return (files_in, files_out)
@@ -145,8 +150,8 @@ address_to_insert = 0x8000000 + offset_to_insert
 build_tools()
 
 with Generator("build.ninja") as gen:
-    gen.write_var("preproc", "build/tools/preproc")
-    gen.write_var("gbagfx", "build/tools/gbagfx")
+    gen.write_var("preproc", os.path.join(BUILD_DIR, TOOLS_DIR, "preproc"))
+    gen.write_var("gbagfx", os.path.join(BUILD_DIR, TOOLS_DIR, "gbagfx"))
     gen.write_var("gcc", "arm-none-eabi-gcc")
     gen.write_var("ld", "arm-none-eabi-ld")
     gen.write_var("objcopy", "arm-none-eabi-objcopy")
@@ -158,8 +163,8 @@ with Generator("build.ninja") as gen:
     gen.break_line()
 
     gen.write_rule("gfx", command="$gbagfx $in $out")
-    gen.write_rule("cc", command="$gcc -E -Iinclude $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -o $out -c -", depfile="$out.d")
-    gen.write_rule("asm", command="$gcc $cflags -Iasm -o $out -c $in")
+    gen.write_rule("cc", command=f"$gcc -E -I{INC_DIR} $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -o $out -c -", depfile="$out.d")
+    gen.write_rule("asm", command=f"$gcc $cflags -I{ASM_DIR} -o $out -c $in")
     gen.write_rule("link", command="$ld $ldflags -o $out $in && $objcopy -O binary $out $out.bin && $python insert.py")
 
     gfx_jobs = collect_gfx_files()
@@ -178,4 +183,4 @@ with Generator("build.ninja") as gen:
 
     if asm_srcs: gen.break_line()
     all_objs = c_objs + asm_objs
-    gen.write_build("link", "build/blob.o", all_objs)
+    gen.write_build("link", os.path.join(BUILD_DIR, "blob.o"), all_objs)
