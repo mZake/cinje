@@ -32,13 +32,12 @@ class Generator:
         self.stream.write(f"rule {name}\n")
         for key, value in kwargs.items():
             self.stream.write(f"  {key} = {value}\n")
+        self.stream.write("\n")
 
-    def write_build(self, rule: str, file_out: str, file_in: str, **kwargs):
-        self.stream.write(f"build {file_out}: {rule} {file_in}\n")
-        for key, value in kwargs.items():
-            self.stream.write(f"  {key} = {value}\n")
+    def write_build(self, rule: str, files_out: str | list, files_in: str | list, **kwargs):
+        if isinstance(files_in, str): files_in = [files_in]
+        if isinstance(files_out, str): files_out = [files_out]
 
-    def write_build_list(self, rule: str, files_out: list, files_in: list, **kwargs):
         self.stream.write("build")
         for file_out in files_out:
             self.stream.write(f" {file_out}")
@@ -84,6 +83,63 @@ def build_tools():
         dest_exe = os.path.join(tools_build_dir, exe_name)
         shutil.copy2(src_exe, dest_exe)
 
+def change_file_ext(file: str, ext: str) -> str:
+    return os.path.splitext(file)[0] + ext
+
+def collect_gfx_files():
+    build_jobs = []
+
+    files_png = glob.glob("graphics/**/*.png", recursive=True)
+    files_png.sort()
+    for file_png in files_png:
+        file_1bpp = change_file_ext(file_png, ".1bpp")
+        file_4bpp = change_file_ext(file_png, ".4bpp")
+        file_8bpp = change_file_ext(file_png, ".8bpp")
+        file_gbapal = change_file_ext(file_png, ".gbapal")
+        file_1bpp_lz = change_file_ext(file_png, ".1bpp.lz")
+        file_4bpp_lz = change_file_ext(file_png, ".4bpp.lz")
+        file_8bpp_lz = change_file_ext(file_png, ".8bpp.lz")
+
+        build_jobs.append((file_png, file_1bpp))
+        build_jobs.append((file_png, file_4bpp))
+        build_jobs.append((file_png, file_8bpp))
+        build_jobs.append((file_png, file_gbapal))
+        build_jobs.append((file_1bpp, file_1bpp_lz))
+        build_jobs.append((file_4bpp, file_4bpp_lz))
+        build_jobs.append((file_8bpp, file_8bpp_lz))
+
+    files_bin = glob.glob("graphics/**/*.bin", recursive=True)
+    files_bin.sort()
+    for file_bin in files_bin:
+        file_bin_lz = change_file_ext(file_bin, ".bin.lz")
+        build_jobs.append((file_bin, file_bin_lz))
+
+    return build_jobs
+
+def collect_c_files() -> tuple:
+    files_out = []
+
+    files_in = glob.glob("src/**/*.c", recursive=True)
+    files_in.sort()
+    for file_in in files_in:
+        file_out = change_file_ext(file_in, ".o")
+        file_out = os.path.join("build", file_out)
+        files_out.append(file_out)
+
+    return (files_in, files_out)
+
+def collect_asm_files() -> tuple:
+    files_out = []
+
+    files_in = glob.glob("asm/**/*.s", recursive=True)
+    files_in.sort()
+    for file_in in files_in:
+        file_out = change_file_ext(file_in, ".o")
+        file_out = os.path.join("build", file_out)
+        files_out.append(file_out)
+
+    return (files_in, files_out)
+
 address_to_insert = 0x8000000 + offset_to_insert
 
 build_tools()
@@ -102,57 +158,24 @@ with Generator("build.ninja") as gen:
     gen.break_line()
 
     gen.write_rule("gfx", command="$gbagfx $in $out")
-    gen.break_line()
-
-    gen.write_rule("cc", command="$gcc -Iinclude -E $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -c -o $out -", depfile="$out.d")
-    gen.break_line()
-
-    gen.write_rule("asm", command="$gcc $cflags -Iasm -c -o $out $in")
-    gen.break_line()
-
+    gen.write_rule("cc", command="$gcc -E -Iinclude $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -o $out -c -", depfile="$out.d")
+    gen.write_rule("asm", command="$gcc $cflags -Iasm -o $out -c $in")
     gen.write_rule("link", command="$ld $ldflags -o $out $in && $objcopy -O binary $out $out.bin && $python insert.py")
-    gen.break_line()
 
-    png_files = glob.glob("graphics/**/*.png", recursive=True)
-    for png_file in png_files:
-        out_1bpp_file = os.path.splitext(png_file)[0] + ".1bpp"
-        out_1bpp_lz_file = out_1bpp_file + ".lz"
-        out_4bpp_file = os.path.splitext(png_file)[0] + ".4bpp"
-        out_4bpp_lz_file = out_4bpp_file + ".lz"
-        out_8bpp_file = os.path.splitext(png_file)[0] + ".8bpp"
-        out_8bpp_lz_file = out_8bpp_file + ".lz"
-        out_gbapal_file = os.path.splitext(png_file)[0] + ".gbapal"
+    gfx_jobs = collect_gfx_files()
+    for file_in, file_out in gfx_jobs:
+        gen.write_build("gfx", file_out, file_in)
 
-        gen.write_build("gfx", out_1bpp_file, png_file)
-        gen.write_build("gfx", out_4bpp_file, png_file)
-        gen.write_build("gfx", out_8bpp_file, png_file)
-        gen.write_build("gfx", out_gbapal_file, png_file)
-        gen.write_build("gfx", out_1bpp_lz_file, out_1bpp_file)
-        gen.write_build("gfx", out_4bpp_lz_file, out_4bpp_file)
-        gen.write_build("gfx", out_8bpp_lz_file, out_8bpp_file)
-    if len(png_files) > 0: gen.break_line()
+    if gfx_jobs: gen.break_line()
+    c_srcs, c_objs = collect_c_files()
+    for c_src, c_obj in zip(c_srcs, c_objs):
+        gen.write_build("cc", c_obj, c_src)
 
-    bin_files = glob.glob("graphics/**/*.bin", recursive=True)
-    for bin_file in bin_files:
-        out_lz_file = bin_file + ".lz"
-        gen.write_build("gfx", out_lz_file, bin_file)
-    if len(bin_files) > 0: gen.break_line()
+    if c_srcs: gen.break_line()
+    asm_srcs, asm_objs = collect_asm_files()
+    for asm_src, asm_obj in zip(asm_srcs, asm_objs):
+        gen.write_build("asm", asm_obj, asm_src)
 
-    c_obj_files = []
-    c_files = glob.glob("src/**/*.c", recursive=True)
-    for c_file in c_files:
-        obj_file = os.path.join("build", c_file) + ".o"
-        gen.write_build("cc", obj_file, c_file)
-        c_obj_files.append(obj_file)
-    if len(c_files): gen.break_line()
-
-    asm_obj_files = []
-    asm_files = glob.glob("asm/**/*.s", recursive=True)
-    for asm_file in asm_files:
-        out_file = os.path.join("build", asm_file) + ".o"
-        gen.write_build("asm", out_file, asm_file)
-        asm_obj_files.append(out_file)
-    if len(asm_files) > 0: gen.break_line()
-
-    obj_files = c_obj_files + asm_obj_files
-    gen.write_build_list("link", ["build/linked.o"], obj_files)
+    if asm_srcs: gen.break_line()
+    all_objs = c_objs + asm_objs
+    gen.write_build("link", "build/blob.o", all_objs)
