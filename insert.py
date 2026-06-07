@@ -18,7 +18,7 @@ if not os.path.isfile(base_rom_file):
 shutil.copy2(base_rom_file, out_rom_file)
 
 with open(out_rom_file, "r+b") as rom_stream:
-    with open("build/linked.o.bin", "rb") as blob_stream:
+    with open("build/blob.o.bin", "rb") as blob_stream:
         blob = blob_stream.read()
         rom_stream.seek(offset_to_insert)
         rom_stream.write(blob)
