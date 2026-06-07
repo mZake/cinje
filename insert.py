@@ -6,19 +6,19 @@ import os
 import shutil
 import sys
 
-from generate import offset_to_insert, base_rom_file, out_rom_file
+from generate import OFFSET_TO_INSERT, BASE_ROM_FILE, OUT_ROM_FILE
 
-if not os.path.exists(base_rom_file):
-    print(f"Error: {base_rom_file} not found")
+if not os.path.exists(BASE_ROM_FILE):
+    print(f"Error: {BASE_ROM_FILE} not found")
     sys.exit(1)
-if not os.path.isfile(base_rom_file):
-    print(f"Error: {base_rom_file} is not a file")
+if not os.path.isfile(BASE_ROM_FILE):
+    print(f"Error: {BASE_ROM_FILE} is not a file")
     sys.exit(1)
 
-shutil.copy2(base_rom_file, out_rom_file)
+shutil.copy2(BASE_ROM_FILE, OUT_ROM_FILE)
 
-with open(out_rom_file, "r+b") as rom_stream:
+with open(OUT_ROM_FILE, "r+b") as rom_stream:
     with open("build/blob.o.bin", "rb") as blob_stream:
         blob = blob_stream.read()
-        rom_stream.seek(offset_to_insert)
+        rom_stream.seek(OFFSET_TO_INSERT)
         rom_stream.write(blob)

@@ -7,9 +7,9 @@ import subprocess
 import sys
 
 # Change this if needed
-offset_to_insert = 0x1400000
-base_rom_file = "base.gba"
-out_rom_file = "out.gba"
+OFFSET_TO_INSERT = 0x1400000
+BASE_ROM_FILE = "base.gba"
+OUT_ROM_FILE = "out.gba"
 
 ASM_DIR = "asm"
 BUILD_DIR = "build"
@@ -24,6 +24,14 @@ EXE_SUFFIX = ".exe" if os.getenv("OS") == "Windows_NT" else ""
 DEVKITARM = os.getenv("DEVKITARM")
 if not DEVKITARM:
     print("Error: DEVKITARM enviroment variable is not set")
+    sys.exit(1)
+
+ROM_BEGIN = 0x8000000
+ROM_END = 0x9FFFFFF
+
+ADDRESS_TO_INSERT = OFFSET_TO_INSERT + 0x8000000
+if ADDRESS_TO_INSERT < ROM_BEGIN or ADDRESS_TO_INSERT > ROM_END:
+    print("Error: offset to insert must be between 0x0 - 0x1FFFFFF")
     sys.exit(1)
 
 class Generator:
@@ -171,8 +179,6 @@ def collect_asm_files() -> tuple:
 build_tools()
 
 with Generator("build.ninja") as gen:
-    address_to_insert = 0x8000000 + offset_to_insert
-
     preproc_path = get_local_tool_path("preproc")
     gbagfx_path = get_local_tool_path("gbagfx")
     gcc_path = get_devkitarm_tool_path("gcc")
@@ -189,7 +195,7 @@ with Generator("build.ninja") as gen:
     gen.break_line()
 
     gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
-    gen.write_var("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{address_to_insert:08X}")
+    gen.write_var("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
     gen.break_line()
 
     gen.write_rule("gfx", command="$gbagfx $in $out")
