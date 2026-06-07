@@ -10,10 +10,8 @@ build.ninja
 *.1bpp
 *.4bpp
 *.8bpp
-*.1bpp.lz
-*.4bpp.lz
-*.8bpp.lz
 *.gbapal
+*.lz
 
 # ROMs
 *.gba
