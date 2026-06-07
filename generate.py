@@ -176,47 +176,50 @@ def collect_asm_files() -> tuple:
 
     return (files_in, files_out)
 
-build_tools()
+def main():
+    build_tools()
 
-with Generator("build.ninja") as gen:
-    preproc_path = get_local_tool_path("preproc")
-    gbagfx_path = get_local_tool_path("gbagfx")
-    gcc_path = get_devkitarm_tool_path("gcc")
-    ld_path = get_devkitarm_tool_path("ld")
-    objcopy_path = get_devkitarm_tool_path("objcopy")
-    python_path = sys.executable
+    with Generator("build.ninja") as gen:
+        preproc_path = get_local_tool_path("preproc")
+        gbagfx_path = get_local_tool_path("gbagfx")
+        gcc_path = get_devkitarm_tool_path("gcc")
+        ld_path = get_devkitarm_tool_path("ld")
+        objcopy_path = get_devkitarm_tool_path("objcopy")
+        python_path = sys.executable
 
-    gen.write_var("preproc", preproc_path)
-    gen.write_var("gbagfx", gbagfx_path)
-    gen.write_var("gcc", gcc_path)
-    gen.write_var("ld", ld_path)
-    gen.write_var("objcopy", objcopy_path)
-    gen.write_var("python", python_path)
-    gen.break_line()
+        gen.write_var("preproc", preproc_path)
+        gen.write_var("gbagfx", gbagfx_path)
+        gen.write_var("gcc", gcc_path)
+        gen.write_var("ld", ld_path)
+        gen.write_var("objcopy", objcopy_path)
+        gen.write_var("python", python_path)
+        gen.break_line()
 
-    gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
-    gen.write_var("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
-    gen.break_line()
+        gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
+        gen.write_var("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
+        gen.break_line()
 
-    gen.write_rule("gfx", command="$gbagfx $in $out")
-    gen.write_rule("cc", command=f"$gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | $preproc -i $in charmap.txt | $gcc $cflags -xc -o $out -c -", depfile="$out.d")
-    gen.write_rule("asm", command=f"$gcc $cflags -I{ASM_DIR} -o $out -c $in")
-    gen.write_rule("link", command="$ld $ldflags -o $out $in && $objcopy -O binary $out $out.bin && $python insert.py")
+        gen.write_rule("gfx", command="$gbagfx $in $out")
+        gen.write_rule("cc", command=f"$gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | $preproc -i $in charmap.txt | $gcc $cflags -xc -o $out -c -", depfile="$out.d")
+        gen.write_rule("asm", command=f"$gcc $cflags -I{ASM_DIR} -o $out -c $in")
+        gen.write_rule("link", command="$ld $ldflags -o $out $in && $objcopy -O binary $out $out.bin && $python insert.py")
 
-    gfx_jobs = collect_gfx_files()
-    for file_in, file_out in gfx_jobs:
-        gen.write_build("gfx", file_out, file_in)
+        gfx_jobs = collect_gfx_files()
+        for file_in, file_out in gfx_jobs:
+            gen.write_build("gfx", file_out, file_in)
 
-    if gfx_jobs: gen.break_line()
-    c_srcs, c_objs = collect_c_files()
-    for c_src, c_obj in zip(c_srcs, c_objs):
-        gen.write_build("cc", c_obj, c_src)
+        if gfx_jobs: gen.break_line()
+        c_srcs, c_objs = collect_c_files()
+        for c_src, c_obj in zip(c_srcs, c_objs):
+            gen.write_build("cc", c_obj, c_src)
 
-    if c_srcs: gen.break_line()
-    asm_srcs, asm_objs = collect_asm_files()
-    for asm_src, asm_obj in zip(asm_srcs, asm_objs):
-        gen.write_build("asm", asm_obj, asm_src)
+        if c_srcs: gen.break_line()
+        asm_srcs, asm_objs = collect_asm_files()
+        for asm_src, asm_obj in zip(asm_srcs, asm_objs):
+            gen.write_build("asm", asm_obj, asm_src)
 
-    if asm_srcs: gen.break_line()
-    all_objs = c_objs + asm_objs
-    gen.write_build("link", os.path.join(BUILD_DIR, "blob.o"), all_objs)
+        if asm_srcs: gen.break_line()
+        all_objs = c_objs + asm_objs
+        gen.write_build("link", os.path.join(BUILD_DIR, "blob.o"), all_objs)
+
+if __name__ == "__main__": main()
