@@ -163,9 +163,10 @@ with Generator("build.ninja") as gen:
     gen.break_line()
 
     gen.write_rule("gfx", command="$gbagfx $in $out")
-    gen.write_rule("cc", command=f"$gcc -E -I{INC_DIR} $in | $preproc -i $in charmap.txt | $gcc $cflags -MD -MF $out.d -xc -o $out -c -", depfile="$out.d")
+    gen.write_rule("cc", command=f"$gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | $preproc -i $in charmap.txt | $gcc $cflags -xc -o $out -c -", depfile="$out.d")
     gen.write_rule("asm", command=f"$gcc $cflags -I{ASM_DIR} -o $out -c $in")
-    gen.write_rule("link", command="$ld $ldflags -o $out $in && $objcopy -O binary $out $out.bin && $python insert.py")
+    gen.write_rule("link", command="$ld $ldflags -o $out $in")
+    gen.write_rule("insert", command="$objcopy -O binary $blob_obj $blob_obj.bin && $python insert.py")
 
     gfx_jobs = collect_gfx_files()
     for file_in, file_out in gfx_jobs:
