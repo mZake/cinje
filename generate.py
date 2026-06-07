@@ -18,6 +18,14 @@ INC_DIR = "include"
 SRC_DIR = "src"
 TOOLS_DIR = "tools"
 
+# Required for MinGW, MSYS2 and Cygwin
+EXE_SUFFIX = ".exe" if os.getenv("OS") == "Windows_NT" else ""
+
+DEVKITARM = os.getenv("DEVKITARM")
+if not DEVKITARM:
+    print("Error: DEVKITARM enviroment variable is not set")
+    sys.exit(1)
+
 class Generator:
     def __init__(self, file_path: str):
         self.file_path = file_path
@@ -61,9 +69,6 @@ class Generator:
         self.stream.write("\n")
 
 def build_tools():
-    # Required for MinGW, MSYS2 and Cygwin
-    exe_suffix = ".exe" if os.getenv("OS") == "Windows_NT" else ""
-
     if not os.path.exists(TOOLS_DIR):
         print("Error: tools directory not found")
         sys.exit(1)
@@ -83,10 +88,28 @@ def build_tools():
         if result.returncode != 0:
             sys.exit(1)
 
-        exe_name = name + exe_suffix
+        exe_name = name + EXE_SUFFIX
         src_exe = os.path.join(src_dir, exe_name)
         dest_exe = os.path.join(BIN_DIR, exe_name)
         shutil.copy2(src_exe, dest_exe)
+
+def get_devkitarm_tool_path(name: str) -> str:
+    tool_path = os.path.join(DEVKITARM, "bin", f"arm-none-eabi-{name}{EXE_SUFFIX}")
+    if not os.path.exists(tool_path) or not os.path.isfile(tool_path):
+        print(f"Error: could not find {name} (searched at {tool_path})")
+        sys.exit(1)
+
+    print(f"Found {name} at {tool_path}")
+    return tool_path
+
+def get_local_tool_path(name: str) -> str:
+    tool_path = os.path.join(BUILD_DIR, TOOLS_DIR, f"{name}{EXE_SUFFIX}")
+    if not os.path.exists(tool_path) or not os.path.isfile(tool_path):
+        print(f"Error: could not find {name} (searched at {tool_path})")
+        sys.exit(1)
+
+    print(f"Found {name} at {tool_path}")
+    return tool_path
 
 def change_file_ext(file: str, ext: str) -> str:
     return os.path.splitext(file)[0] + ext
@@ -145,17 +168,24 @@ def collect_asm_files() -> tuple:
 
     return (files_in, files_out)
 
-address_to_insert = 0x8000000 + offset_to_insert
-
 build_tools()
 
 with Generator("build.ninja") as gen:
-    gen.write_var("preproc", os.path.join(BUILD_DIR, TOOLS_DIR, "preproc"))
-    gen.write_var("gbagfx", os.path.join(BUILD_DIR, TOOLS_DIR, "gbagfx"))
-    gen.write_var("gcc", "arm-none-eabi-gcc")
-    gen.write_var("ld", "arm-none-eabi-ld")
-    gen.write_var("objcopy", "arm-none-eabi-objcopy")
-    gen.write_var("python", sys.executable)
+    address_to_insert = 0x8000000 + offset_to_insert
+
+    preproc_path = get_local_tool_path("preproc")
+    gbagfx_path = get_local_tool_path("gbagfx")
+    gcc_path = get_devkitarm_tool_path("gcc")
+    ld_path = get_devkitarm_tool_path("ld")
+    objcopy_path = get_devkitarm_tool_path("objcopy")
+    python_path = sys.executable
+
+    gen.write_var("preproc", preproc_path)
+    gen.write_var("gbagfx", gbagfx_path)
+    gen.write_var("gcc", gcc_path)
+    gen.write_var("ld", ld_path)
+    gen.write_var("objcopy", objcopy_path)
+    gen.write_var("python", python_path)
     gen.break_line()
 
     gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
