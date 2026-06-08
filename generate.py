@@ -180,6 +180,8 @@ def main():
     build_tools()
 
     with Generator("build.ninja") as gen:
+        BLOB_OBJ = os.path.join(BUILD_DIR, "blob.o")
+
         preproc_path = get_local_tool_path("preproc")
         gbagfx_path = get_local_tool_path("gbagfx")
         gcc_path = get_devkitarm_tool_path("gcc")
@@ -202,7 +204,8 @@ def main():
         gen.write_rule("gfx", command="$gbagfx $in $out")
         gen.write_rule("cc", command=f"$gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | $preproc -i $in charmap.txt | $gcc $cflags -xc -o $out -c -", depfile="$out.d")
         gen.write_rule("asm", command=f"$gcc $cflags -I{ASM_DIR} -o $out -c $in")
-        gen.write_rule("link", command="$ld $ldflags -o $out $in && $objcopy -O binary $out $out.bin && $python insert.py")
+        gen.write_rule("link", command="$ld $ldflags -o $out $in")
+        gen.write_rule("insert", command="$objcopy -O binary $obj_file $obj_file.bin && $python insert.py")
 
         gfx_jobs = collect_gfx_files()
         for file_in, file_out in gfx_jobs:
@@ -220,6 +223,9 @@ def main():
 
         if asm_srcs: gen.break_line()
         all_objs = c_objs + asm_objs
-        gen.write_build("link", os.path.join(BUILD_DIR, "blob.o"), all_objs)
+        gen.write_build("link", BLOB_OBJ, all_objs)
+
+        if all_objs: gen.break_line()
+        gen.write_build("insert", OUT_ROM_FILE, [BASE_ROM_FILE, BLOB_OBJ], obj_file=BLOB_OBJ)
 
 if __name__ == "__main__": main()
