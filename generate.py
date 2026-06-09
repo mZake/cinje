@@ -184,6 +184,7 @@ def main():
 
         preproc_path = get_local_tool_path("preproc")
         gbagfx_path = get_local_tool_path("gbagfx")
+        patchbin_path = get_local_tool_path("patchbin")
         gcc_path = get_devkitarm_tool_path("gcc")
         ld_path = get_devkitarm_tool_path("ld")
         objcopy_path = get_devkitarm_tool_path("objcopy")
@@ -191,10 +192,10 @@ def main():
 
         gen.write_var("preproc", preproc_path)
         gen.write_var("gbagfx", gbagfx_path)
+        gen.write_var("patchbin", patchbin_path)
         gen.write_var("gcc", gcc_path)
         gen.write_var("ld", ld_path)
         gen.write_var("objcopy", objcopy_path)
-        gen.write_var("python", python_path)
         gen.break_line()
 
         gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
@@ -205,7 +206,7 @@ def main():
         gen.write_rule("cc", command=f"$gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | $preproc -i $in charmap.txt | $gcc $cflags -xc -o $out -c -", depfile="$out.d")
         gen.write_rule("asm", command=f"$gcc $cflags -I{ASM_DIR} -o $out -c $in")
         gen.write_rule("link", command="$ld $ldflags -o $out $in")
-        gen.write_rule("insert", command="$objcopy -O binary $obj_file $obj_file.bin && $python insert.py")
+        gen.write_rule("insert", command="$objcopy -O binary $obj_file $obj_file.bin && $patchbin $base_rom $out $obj_file.bin $offset")
 
         gfx_jobs = collect_gfx_files()
         for file_in, file_out in gfx_jobs:
@@ -226,6 +227,9 @@ def main():
         gen.write_build("link", BLOB_OBJ, all_objs)
 
         if all_objs: gen.break_line()
-        gen.write_build("insert", OUT_ROM_FILE, [BASE_ROM_FILE, BLOB_OBJ], obj_file=BLOB_OBJ)
+        gen.write_build("insert", OUT_ROM_FILE, [BASE_ROM_FILE, BLOB_OBJ],
+                        base_rom=BASE_ROM_FILE,
+                        obj_file=BLOB_OBJ,
+                        offset=f"0x{OFFSET_TO_INSERT:06X}")
 
 if __name__ == "__main__": main()
