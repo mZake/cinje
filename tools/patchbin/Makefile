@@ -2,6 +2,8 @@ CXX ?= g++
 
 CXXFLAGS := -std=c++20 -O2 -Wall -Wextra
 
+SOURCES := common.cpp main.cpp parser.cpp
+
 ifeq ($(OS),Windows_NT)
 EXE := .exe
 else
@@ -13,8 +15,8 @@ endif
 all: patchbin$(EXE)
 	@:
 
-patchbin$(EXE): main.cpp
-	$(CXX) $(CXXFLAGS) main.cpp -o $@
+patchbin$(EXE): $(SOURCES)
+	$(CXX) $(CXXFLAGS) $(SOURCES) -o $@
 
 clean:
 	$(RM) patchbin patchbin.exe

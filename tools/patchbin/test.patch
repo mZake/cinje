@@ -1,0 +1,5 @@
+# This is a comment
+data 100 Hello # This is another comment
+func 1000 Hello "Hello, world"
+""
+
