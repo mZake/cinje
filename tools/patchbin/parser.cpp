@@ -85,7 +85,7 @@ static bool is_identifier_char(char c)
     return is_alnum_char(c) || c == '_';
 }
 
-static Token keyword_token(size_t line, TokenType type)
+static Token make_token(TokenType type, size_t line)
 {
     Token token;
     token.type = type;
@@ -93,30 +93,21 @@ static Token keyword_token(size_t line, TokenType type)
     return token;
 }
 
-static Token identifier_token(size_t line, std::string_view text_value)
+static Token make_token(TokenType type, size_t line, uint32_t int_value)
 {
     Token token;
-    token.type = TokenType::Identifier;
-    token.line = line;
-    token.text_value = text_value;
-    return token;
-}
-
-static Token string_token(size_t line, std::string_view text_value)
-{
-    Token token;
-    token.type = TokenType::String;
-    token.line = line;
-    token.text_value = text_value;
-    return token;
-}
-
-static Token number_token(size_t line, uint32_t int_value)
-{
-    Token token;
-    token.type = TokenType::Number;
+    token.type = type;
     token.line = line;
     token.int_value = int_value;
+    return token;
+}
+
+static Token make_token(TokenType type, size_t line, std::string_view text_value)
+{
+    Token token;
+    token.type = type;
+    token.line = line;
+    token.text_value = text_value;
     return token;
 }
 
@@ -185,7 +176,7 @@ static std::vector<Token> tokenize(std::string_view source, std::string_view fil
 
         if (*current_it == '\n')
         {
-            auto token = keyword_token(line, TokenType::Newline);
+            auto token = make_token(TokenType::Newline, line);
             tokens.push_back(token);
             ++current_it;
             ++line;
@@ -210,12 +201,12 @@ static std::vector<Token> tokenize(std::string_view source, std::string_view fil
             auto table_it = s_keyword_table.find(text_value);
             if (table_it != s_keyword_table.end())
             {
-                auto token = keyword_token(line, table_it->second);
+                auto token = make_token(table_it->second, line);
                 tokens.push_back(token);
             }
             else
             {
-                auto token = identifier_token(line, text_value);
+                auto token = make_token(TokenType::Identifier, line, text_value);
                 tokens.push_back(token);
             }
         }
@@ -232,7 +223,7 @@ static std::vector<Token> tokenize(std::string_view source, std::string_view fil
             if (fc_result.ec == std::errc::result_out_of_range)
                 source_error({file, line}, "{} cannot be stored in a 32-bit integer", text_value);
 
-            auto token = number_token(line, int_value);
+            auto token = make_token(TokenType::Number, line, int_value);
             tokens.push_back(token);
         }
         else if (*current_it == '\"')
@@ -249,12 +240,12 @@ static std::vector<Token> tokenize(std::string_view source, std::string_view fil
             }
 
             std::string_view text_value{first_it, current_it++};
-            auto token = string_token(line, text_value);
+            auto token = make_token(TokenType::String, line, text_value);
             tokens.push_back(token);
         }
     }
 
-    Token eof_token = keyword_token(line, TokenType::EndOfFile);
+    Token eof_token = make_token(TokenType::EndOfFile, line);
     tokens.push_back(eof_token);
 
     return tokens;
