@@ -230,6 +230,6 @@ def main():
         gen.write_build("insert", OUT_ROM_FILE, [BASE_ROM_FILE, BLOB_OBJ],
                         base_rom=BASE_ROM_FILE,
                         obj_file=BLOB_OBJ,
-                        offset=f"0x{OFFSET_TO_INSERT:06X}")
+                        offset=f"{OFFSET_TO_INSERT:06X}")
 
 if __name__ == "__main__": main()

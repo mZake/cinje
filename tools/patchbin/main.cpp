@@ -17,15 +17,10 @@ namespace fs = std::filesystem;
 static uint32_t string_to_uint32(std::string_view string)
 {
     uint32_t value = 0;
-    std::from_chars_result result;
 
-    if (string.starts_with("0x"))
-        result = std::from_chars(string.begin() + 2, string.end(), value, 16);
-    else
-        result = std::from_chars(string.begin(), string.end(), value);
-
+    auto result = std::from_chars(string.begin(), string.end(), value, 16);
     if (result.ec == std::errc::invalid_argument)
-        log_fatal("%s is not a valid integer representation", string.data());
+        log_fatal("%s is not a valid hexadecimal representation", string.data());
     if (result.ec == std::errc::result_out_of_range)
         log_fatal("%s cannot be stored in a 32-bit unsigned integer", string.data());
 
