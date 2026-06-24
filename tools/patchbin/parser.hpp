@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 
+#include <stddef.h>
 #include <stdint.h>
 
 struct PointerPatch
@@ -27,13 +28,13 @@ struct HookPatch
     std::string_view symbol;
 };
 
-struct PatchJobs
+struct PatchCommands
 {
     std::vector<PointerPatch> pointers;
     std::vector<RewritePatch> rewrites;
     std::vector<HookPatch> hooks;
 };
 
-PatchJobs load_patch_file(std::string_view file);
+PatchCommands load_patch_file(std::string_view file_path);
 
 #endif // PARSER_HPP_

@@ -1,5 +1,7 @@
 # This is a comment
-data 100 Hello # This is another comment
-func 1000 Hello "Hello, world"
+data 0AABBCC Hello # This is another comment
+func 10FF00 Hello "Hello, world"
 ""
+hook Callback 0A96080#Comment
+rewrite "Foo"
 

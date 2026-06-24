@@ -85,6 +85,9 @@ static void print_usage()
 
 int main(int argc, char** argv)
 {
+    load_patch_file(argv[1]);
+
+/*
     if (argc == 1)
         print_usage();
 
@@ -93,6 +96,13 @@ int main(int argc, char** argv)
 
     std::string_view base_rom_path = argv[1];
     std::string_view out_rom_path = argv[2];
+
+    for (int i = 3; i < argc; ++i)
+    {
+        std::string_view patch_file = argv[i];
+        process_patch_file(patch_file, patches);
+    }
+
     std::string_view bin_blob_path = argv[3];
     std::string_view offset_string = argv[4];
 
@@ -104,5 +114,6 @@ int main(int argc, char** argv)
     patch_buffer_into_rom(out_rom_path, blob_buffer, offset);
 
     log_status("operation completed with success");
+*/
 }
 

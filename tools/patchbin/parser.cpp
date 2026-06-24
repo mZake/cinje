@@ -2,13 +2,10 @@
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
-#include <format>
 #include <fstream>
-#include <iostream>
 #include <string_view>
 #include <string>
 #include <unordered_map>
-#include <utility>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -33,14 +30,19 @@ struct Token
 {
     TokenType type;
     size_t line;
-    uint32_t int_value;
-    std::string_view text_value;
+    size_t column;
+    uint32_t number;
+    std::string text;
 };
 
-struct SourceLocation
+struct LexerState
 {
-    std::string_view file;
+    std::vector<Token> tokens;
+    std::string file_path;
+    std::string source;
+    size_t index;
     size_t line;
+    size_t column;
 };
 
 static std::unordered_map<std::string_view, TokenType> s_keyword_table =
@@ -57,88 +59,26 @@ static std::unordered_map<std::string_view, TokenType> s_keyword_table =
 
 static bool is_space_char(char c)
 {
-    return c != '\n' && std::isspace(static_cast<unsigned char>(c));
-}
-
-static bool is_alpha_char(char c)
-{
-    return std::isalpha(static_cast<unsigned char>(c));
-}
-
-static bool is_alnum_char(char c)
-{
-    return std::isalnum(static_cast<unsigned char>(c));
-}
-
-static bool is_xdigit_char(char c)
-{
-    return std::isxdigit(static_cast<unsigned char>(c));
+    auto uc = static_cast<unsigned char>(c);
+    return std::isspace(uc) && uc != '\n';
 }
 
 static bool is_identifier_start(char c)
 {
-    return is_alpha_char(c) || c == '_';
+    auto uc = static_cast<unsigned char>(c);
+    return std::isalpha(uc) || uc == '_';
 }
 
 static bool is_identifier_char(char c)
 {
-    return is_alnum_char(c) || c == '_';
+    auto uc = static_cast<unsigned char>(c);
+    return std::isalnum(uc) || uc == '_';
 }
 
-static Token make_token(TokenType type, size_t line)
+static bool is_digit_char(char c)
 {
-    Token token;
-    token.type = type;
-    token.line = line;
-    return token;
-}
-
-static Token make_token(TokenType type, size_t line, uint32_t int_value)
-{
-    Token token;
-    token.type = type;
-    token.line = line;
-    token.int_value = int_value;
-    return token;
-}
-
-static Token make_token(TokenType type, size_t line, std::string_view text_value)
-{
-    Token token;
-    token.type = type;
-    token.line = line;
-    token.text_value = text_value;
-    return token;
-}
-
-static std::string_view token_type_name(TokenType type)
-{
-    switch (type)
-    {
-        case TokenType::Data: return "data";
-        case TokenType::Func: return "func";
-        case TokenType::Hook: return "hook";
-        case TokenType::Rewrite: return "rewrite";
-        case TokenType::Identifier: return "identifier";
-        case TokenType::String: return "string";
-        case TokenType::Number: return "number";
-        case TokenType::Newline: return "newline";
-        case TokenType::EndOfFile: return "EOF";
-        default: return "unknown";
-    }
-}
-
-static std::ostream& operator<<(std::ostream& stream, SourceLocation loc)
-{
-    stream << loc.file << ":" << loc.line << ": ";
-    return stream;
-}
-
-template<typename... TArgs>
-static void source_error(SourceLocation loc, std::format_string<TArgs...> fmt, TArgs&&... args)
-{
-    std::cerr << loc << std::format(fmt, std::forward<TArgs>(args)...) << '\n';
-    std::exit(EXIT_FAILURE);
+    auto uc = static_cast<unsigned char>(c);
+    return std::isxdigit(uc);
 }
 
 static std::string read_text_file(std::string_view file)
@@ -158,6 +98,146 @@ static std::string read_text_file(std::string_view file)
     return buffer;
 }
 
+static void add_token(LexerState& state, TokenType type)
+{
+    Token token = {};
+    token.type = type;
+    token.line = state.line;
+    token.column = state.column;
+    state.tokens.push_back(token);
+}
+
+static void add_token(LexerState& state, TokenType type, std::string_view text)
+{
+    Token token = {};
+    token.type = type;
+    token.line = state.line;
+    token.column = state.column;
+    token.text = std::string(text);
+    state.tokens.push_back(token);
+}
+
+static void add_token(LexerState& state, TokenType type, uint32_t number)
+{
+    Token token = {};
+    token.type = type;
+    token.line = state.line;
+    token.column = state.column;
+    token.number = number;
+    state.tokens.push_back(token);
+}
+
+static char advance_column(LexerState& state)
+{
+    ++state.column;
+    return state.source[++state.index];
+}
+
+static char advance_line(LexerState& state)
+{
+    add_token(state, TokenType::Newline);
+    ++state.line;
+    state.column = 1;
+    return state.source[++state.index];
+}
+
+static char current_char(const LexerState& state)
+{
+    return state.source[state.index];
+}
+
+static std::string_view extract_lexeme(const LexerState& state, size_t first)
+{
+    std::string_view source_sv = state.source;
+    size_t count = state.index - first;
+    return source_sv.substr(first, count);
+}
+
+static std::vector<Token> tokenize(std::string_view source, std::string_view file_path)
+{
+    LexerState state = {};
+    state.file_path = std::string(file_path);
+    state.source = std::string(source);
+    state.line = 1;
+    state.column = 1;
+
+    while (true)
+    {
+        char current = current_char(state);
+        while (is_space_char(current))
+            current = advance_column(state);
+
+        if (current == '\0')
+            break;
+
+        if (current == '\n')
+        {
+            advance_line(state);
+            continue;
+        }
+
+        if (current == '#')
+        {
+            while (current != '\0' && current != '\n')
+                current = advance_column(state);
+
+            advance_line(state);
+            continue;
+        }
+
+        if (is_identifier_start(current))
+        {
+            size_t first = state.index;
+
+            while (is_identifier_char(current))
+                current = advance_column(state);
+
+            std::string_view lexeme = extract_lexeme(state, first);
+
+            auto it = s_keyword_table.find(lexeme);
+            if (it != s_keyword_table.end())
+                add_token(state, it->second);
+            else
+                add_token(state, TokenType::Identifier, lexeme);
+        }
+        else if (is_digit_char(current))
+        {
+            size_t first = state.index;
+
+            while (is_digit_char(current))
+                current = advance_column(state);
+
+            std::string_view lexeme = extract_lexeme(state, first);
+
+            uint32_t value = 0;
+            auto result = std::from_chars(lexeme.data(), lexeme.data() + lexeme.size(), value, 16);
+            if (result.ec == std::errc::result_out_of_range)
+                std::exit(EXIT_FAILURE); // TODO: Logging
+
+            add_token(state, TokenType::Number, value);
+        }
+        else if (current == '\"')
+        {
+            size_t first = state.index;
+
+            current = advance_column(state);
+            while (current != '\0' && current != '\n' && current != '\"')
+                current = advance_column(state);
+
+            if (current == '\0' || current == '\n')
+                std::exit(EXIT_FAILURE); // TODO: Logging
+
+            std::string_view lexeme = extract_lexeme(state, first + 1);
+
+            add_token(state, TokenType::String, lexeme);
+            advance_column(state);
+        }
+    }
+
+    return state.tokens;
+}
+
+/*
 static std::vector<Token> tokenize(std::string_view source, std::string_view file)
 {
     std::vector<Token> tokens;
@@ -251,7 +331,7 @@ static std::vector<Token> tokenize(std::string_view source, std::string_view fil
     return tokens;
 }
 
-static PatchJobs parse(const std::vector<Token>& tokens, std::string_view file)
+static std::vector<Patch> parse(std::span<Token> tokens, std::string_view file)
 {
     PatchJobs jobs;
 
@@ -314,12 +394,43 @@ static PatchJobs parse(const std::vector<Token>& tokens, std::string_view file)
 
     return jobs;
 }
+*/
 
-PatchJobs load_patch_file(std::string_view file)
+static const char* token_name(const Token& token)
 {
-    std::string source = read_text_file(file);
-    std::vector<Token> tokens = tokenize(source, file);
-    PatchJobs jobs = parse(tokens, file);
-    return jobs;
+    switch (token.type)
+    {
+        case TokenType::Data: return "Data";
+        case TokenType::Func: return "Func";
+        case TokenType::Hook: return "Hook";
+        case TokenType::Rewrite: return "Rewrite";
+        case TokenType::Identifier: return "Identifier";
+        case TokenType::String: return "String";
+        case TokenType::Number: return "Number";
+        case TokenType::Newline: return "Newline";
+        case TokenType::EndOfFile: return "EndOfFile";
+        default: return "Unknown";
+    }
+}
+
+PatchCommands load_patch_file(std::string_view file_path)
+{
+    std::string source = read_text_file(file_path);
+
+    std::vector<Token> tokens = tokenize(source, file_path);
+    for (const auto& token : tokens)
+    {
+        if (token.type == TokenType::Number)
+            std::printf("%s(%X)", token_name(token), token.number);
+        else
+            std::printf("%s(%s)", token_name(token), token.text.data());
+
+        if (token.type == TokenType::Newline)
+            std::putchar('\n');
+        else
+            std::putchar(' ');
+    }
+
+    return {};
 }
 
