@@ -1,4 +1,3 @@
-#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -8,24 +7,19 @@
 #include <vector>
 
 #include <stdint.h>
+#include <stddef.h>
 
 #include "common.hpp"
 #include "parser.hpp"
 
 namespace fs = std::filesystem;
 
-static uint32_t string_to_uint32(std::string_view string)
+struct CommandLineOptions
 {
-    uint32_t value = 0;
-
-    auto result = std::from_chars(string.begin(), string.end(), value, 16);
-    if (result.ec == std::errc::invalid_argument)
-        log_fatal("%s is not a valid hexadecimal representation", string.data());
-    if (result.ec == std::errc::result_out_of_range)
-        log_fatal("%s cannot be stored in a 32-bit unsigned integer", string.data());
-
-    return value;
-}
+    std::string_view base_rom_file_path;
+    std::string_view out_rom_file_path;
+    std::vector<std::string_view> module_file_paths;
+};
 
 static std::vector<char> read_entire_file(std::string_view file_path)
 {
@@ -77,16 +71,41 @@ static void copy_file(std::string_view src_path, std::string_view dest_path)
         log_fatal("cannot copy %s to %s", src_path.data(), dest_path.data());
 }
 
-static void print_usage()
+static CommandLineOptions parse_command_line(int argc, char** argv)
 {
-    std::fprintf(stderr, "Usage: patchbin BASE_ROM OUT_ROM BIN_FILE OFFSET\n");
-    std::exit(EXIT_SUCCESS);
+    if (argc < 4)
+    {
+        std::fprintf(stderr, "Usage: patchbin BASE_ROM_PATH OUT_ROM_PATH MODULE_PATHS...\n");
+        std::exit(EXIT_FAILURE);
+    }
+
+    int index = 1;
+    auto shift_args = [&]() -> const char* { return (index < argc) ? argv[index++] : nullptr; };
+
+    CommandLineOptions options;
+    options.base_rom_file_path = shift_args();
+    options.out_rom_file_path = shift_args();
+
+    while (const char* arg = shift_args())
+        options.module_file_paths.push_back(arg);
+
+    return options;
 }
 
 int main(int argc, char** argv)
 {
-    load_patch_file(argv[1]);
+    CommandLineOptions options = parse_command_line(argc, argv);
 
+    std::printf("Base ROM: %s\n", options.base_rom_file_path.data());
+    std::printf("Out ROM: %s\n", options.out_rom_file_path.data());
+
+    for (size_t index = 0; index < options.module_file_paths.size(); ++index)
+    {
+        auto file_path = options.module_file_paths[index];
+        std::printf("PBM %zu: %s\n", index, file_path.data());
+    }
+
+    load_patch_file(options.module_file_paths[0]);
 /*
     if (argc == 1)
         print_usage();
