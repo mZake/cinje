@@ -13,17 +13,34 @@
 #include "common.hpp"
 #include "parser.hpp"
 
+/* Available commands:
+ *   import   <type> <file>
+ *   pointer  <type> <offset> <symbol>
+ *   wrapper  <offset> <symbol>
+ *   hook     <offset> <symbol>
+ */
+
 enum class TokenType
 {
-    Data,
-    Func,
+    Import,
+    Pointer,
+    Wrapper,
     Hook,
-    Rewrite,
     Identifier,
     String,
     Number,
     Newline,
-    EndOfFile,
+    Eof
+};
+
+enum class ImportType
+{
+    None, Symbol
+};
+
+enum class PointerType
+{
+    None, Function, Data
 };
 
 struct Token
@@ -47,10 +64,10 @@ struct LexerState
 
 static std::unordered_map<std::string_view, TokenType> s_keyword_table =
 {
-    {"data", TokenType::Data},
-    {"func", TokenType::Func},
-    {"hook", TokenType::Hook},
-    {"rewrite", TokenType::Rewrite},
+    {"import",  TokenType::Import},
+    {"pointer", TokenType::Pointer},
+    {"wrapper", TokenType::Wrapper},
+    {"hook",    TokenType::Hook},
 };
 
 // The behavior of all functions from <cctype> is undefined if the argument's value is
@@ -400,15 +417,15 @@ static const char* token_name(const Token& token)
 {
     switch (token.type)
     {
-        case TokenType::Data: return "Data";
-        case TokenType::Func: return "Func";
+        case TokenType::Import: return "Import";
+        case TokenType::Pointer: return "Pointer";
+        case TokenType::Wrapper: return "Wrapper";
         case TokenType::Hook: return "Hook";
-        case TokenType::Rewrite: return "Rewrite";
         case TokenType::Identifier: return "Identifier";
         case TokenType::String: return "String";
         case TokenType::Number: return "Number";
         case TokenType::Newline: return "Newline";
-        case TokenType::EndOfFile: return "EndOfFile";
+        case TokenType::Eof: return "EOF";
         default: return "Unknown";
     }
 }
