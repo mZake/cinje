@@ -92,7 +92,7 @@ def build_tools():
         if not os.path.isdir(src_dir):
             continue
 
-        result = subprocess.run(["make", "-C", src_dir])
+        result = subprocess.run(["ninja", "-C", src_dir])
         if result.returncode != 0:
             sys.exit(1)
 

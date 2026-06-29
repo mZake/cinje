@@ -3,8 +3,11 @@
 /build
 
 # Ninja
-build.ninja
+/build.ninja
 .ninja_log
+
+# Configuration
+.clangd
 
 # Graphics
 *.1bpp

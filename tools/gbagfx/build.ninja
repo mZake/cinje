@@ -1,0 +1,7 @@
+cflags = -Wall -Wextra -Werror -Wno-sign-compare -std=c11 -O3 -flto -DPNG_SKIP_SETJMP_CHECK `pkg-config --cflags libpng`
+ldflags = `pkg-config --libs-only-L libpng`
+
+rule cc
+  command = gcc $cflags $in -o $out $ldflags -lpng -lz
+
+build gbagfx: cc main.c convert_png.c gfx.c jasc_pal.c lz.c rl.c util.c font.c huff.c | convert_png.h gfx.h global.h jasc_pal.h lz.h rl.h util.h font.h
