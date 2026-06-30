@@ -1,6 +1,8 @@
-cxxflags = -std=c++20 -O2 -Wall -Wextra
+cxxflags = -std=c++20 -O2 -I. -Wall -Wextra
 
 rule cxx
   command = g++ $cxxflags $in -o $out
 
 build patchbin: cxx main.cpp common.cpp script.cpp | common.hpp script.hpp
+
+build tests/lexer: cxx tests/lexer.cpp common.cpp script.cpp | common.hpp script.hpp

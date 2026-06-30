@@ -147,23 +147,6 @@ static std::string_view extract_lexeme(const LexerState& state, size_t first)
     return source_sv.substr(first, count);
 }
 
-static const char* token_name(const Token& token)
-{
-    switch (token.type)
-    {
-        case TokenType::Import: return "Import";
-        case TokenType::Pointer: return "Pointer";
-        case TokenType::Wrapper: return "Wrapper";
-        case TokenType::Hook: return "Hook";
-        case TokenType::Identifier: return "Identifier";
-        case TokenType::String: return "String";
-        case TokenType::Number: return "Number";
-        case TokenType::Newline: return "Newline";
-        case TokenType::Eof: return "EOF";
-        default: return "Unknown";
-    }
-}
-
 std::vector<Token> tokenize_script(std::string_view source)
 {
     LexerState state = {};
@@ -249,22 +232,6 @@ std::vector<Token> tokenize_script(std::string_view source)
 
 std::vector<Patch> compile_script(std::string_view file_path)
 {
-    std::string source = read_text_file(file_path);
-
-    std::vector<Token> tokens = tokenize_script(source);
-    for (const auto& token : tokens)
-    {
-        if (token.type == TokenType::Number)
-            std::printf("%s(%X)", token_name(token), token.number);
-        else
-            std::printf("%s(%s)", token_name(token), token.text.data());
-
-        if (token.type == TokenType::Newline || token.type == TokenType::Eof)
-            std::putchar('\n');
-        else
-            std::putchar(' ');
-    }
-
     return {};
 }
 

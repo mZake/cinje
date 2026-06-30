@@ -1,3 +1,5 @@
 # Executables
 patchbin
 patchbin.exe
+tests/lexer
+tests/lexer.exe

@@ -104,8 +104,6 @@ int main(int argc, char** argv)
         auto file_path = options.script_file_paths[index];
         std::printf("PBM %zu: %s\n", index, file_path.data());
     }
-
-    compile_script(options.script_file_paths[0]);
 /*
     if (argc == 1)
         print_usage();
