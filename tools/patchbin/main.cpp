@@ -10,7 +10,7 @@
 #include <stddef.h>
 
 #include "common.hpp"
-#include "parser.hpp"
+#include "script.hpp"
 
 namespace fs = std::filesystem;
 
@@ -18,7 +18,7 @@ struct CommandLineOptions
 {
     std::string_view base_rom_file_path;
     std::string_view out_rom_file_path;
-    std::vector<std::string_view> module_file_paths;
+    std::vector<std::string_view> script_file_paths;
 };
 
 static std::vector<char> read_entire_file(std::string_view file_path)
@@ -75,7 +75,7 @@ static CommandLineOptions parse_command_line(int argc, char** argv)
 {
     if (argc < 4)
     {
-        std::fprintf(stderr, "Usage: patchbin BASE_ROM_PATH OUT_ROM_PATH MODULE_PATHS...\n");
+        std::fprintf(stderr, "Usage: patchbin BASE_ROM_PATH OUT_ROM_PATH SCRIPT_PATHS...\n");
         std::exit(EXIT_FAILURE);
     }
 
@@ -87,7 +87,7 @@ static CommandLineOptions parse_command_line(int argc, char** argv)
     options.out_rom_file_path = shift_args();
 
     while (const char* arg = shift_args())
-        options.module_file_paths.push_back(arg);
+        options.script_file_paths.push_back(arg);
 
     return options;
 }
@@ -99,13 +99,13 @@ int main(int argc, char** argv)
     std::printf("Base ROM: %s\n", options.base_rom_file_path.data());
     std::printf("Out ROM: %s\n", options.out_rom_file_path.data());
 
-    for (size_t index = 0; index < options.module_file_paths.size(); ++index)
+    for (size_t index = 0; index < options.script_file_paths.size(); ++index)
     {
-        auto file_path = options.module_file_paths[index];
+        auto file_path = options.script_file_paths[index];
         std::printf("PBM %zu: %s\n", index, file_path.data());
     }
 
-    load_patch_file(options.module_file_paths[0]);
+    compile_script(options.script_file_paths[0]);
 /*
     if (argc == 1)
         print_usage();
