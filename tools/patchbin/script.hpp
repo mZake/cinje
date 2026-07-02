@@ -1,6 +1,7 @@
 #ifndef SCRIPT_HPP_
 #define SCRIPT_HPP_
 
+#include <span>
 #include <string_view>
 #include <string>
 #include <vector>
@@ -37,6 +38,8 @@ struct Patch
 };
 
 std::vector<Token> tokenize_script(std::string_view source);
+
+std::vector<Patch> parse_script(std::span<Token> tokens);
 
 std::vector<Patch> compile_script(std::string_view file_path);
 

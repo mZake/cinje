@@ -6,3 +6,4 @@ rule cxx
 build patchbin: cxx main.cpp common.cpp script.cpp | common.hpp script.hpp
 
 build tests/lexer: cxx tests/lexer.cpp common.cpp script.cpp | common.hpp script.hpp
+build tests/parser: cxx tests/parser.cpp common.cpp script.cpp | common.hpp script.hpp

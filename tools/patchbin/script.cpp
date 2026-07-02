@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <span>
 #include <string_view>
 #include <string>
 #include <unordered_map>
@@ -37,6 +38,14 @@ struct LexerState
     size_t index;
     size_t line;
     size_t column;
+};
+
+struct ParserState
+{
+    std::vector<Patch> patches;
+    std::unordered_map<std::string, uint32_t> symbols;
+    std::span<Token> tokens;
+    size_t index;
 };
 
 static std::unordered_map<std::string_view, TokenType> s_keyword_table =
@@ -90,6 +99,23 @@ static std::string read_text_file(std::string_view file)
     stream.read(buffer.data(), size);
 
     return buffer;
+}
+
+static std::string_view token_type_name(TokenType type)
+{
+    switch (type)
+    {
+        case TokenType::Import: return "import";
+        case TokenType::Pointer: return "pointer";
+        case TokenType::Wrapper: return "wrapper";
+        case TokenType::Hook: return "hook";
+        case TokenType::Identifier: return "identifier";
+        case TokenType::String: return "string";
+        case TokenType::Number: return "number";
+        case TokenType::Newline: return "newline";
+        case TokenType::Eof: return "end-of-file";
+        default: return "UNKNOWN";
+    }
 }
 
 static void add_token(LexerState& state, TokenType type)
@@ -161,7 +187,11 @@ std::vector<Token> tokenize_script(std::string_view source)
             current = advance_column(state);
 
         if (current == '\0')
+        {
+            advance_line(state);
+            add_token(state, TokenType::Eof);
             break;
+        }
 
         if (current == '\n')
         {
@@ -173,8 +203,6 @@ std::vector<Token> tokenize_script(std::string_view source)
         {
             while (current != '\0' && current != '\n')
                 current = advance_column(state);
-
-            advance_line(state);
             continue;
         }
 
@@ -228,6 +256,104 @@ std::vector<Token> tokenize_script(std::string_view source)
     }
 
     return state.tokens;
+}
+
+#include <sstream>
+
+static std::unordered_map<std::string, uint32_t> read_symbol_table(std::string_view filepath)
+{
+    // Temporary implementation
+
+    std::unordered_map<std::string, uint32_t> symbols;
+
+    std::string source = read_text_file(filepath);
+    std::istringstream stream{source};
+    stream >> std::hex;
+
+    while (stream)
+    {
+        uint32_t address = 0;
+        char section = 0;
+        std::string name;
+
+        stream >> address >> section >> name;
+        symbols[name] = address;
+    }
+
+    return symbols;
+}
+
+static Token shift_tokens(ParserState& state)
+{
+    return state.tokens[state.index++];
+}
+
+static void type_check(TokenType actual_type, TokenType expected_type)
+{
+    if (actual_type == expected_type)
+        return;
+
+    auto actual_name = token_type_name(actual_type);
+    auto expected_name = token_type_name(expected_type);
+
+    log_fatal("expected %.*s, got %.*s", SV_ARG(actual_name), SV_ARG(expected_name));
+}
+
+static ImportType parse_import_type(std::string_view text)
+{
+    if (text == "sym")
+        return ImportType::Symbol;
+
+    return ImportType::None;
+}
+
+static void parse_import(ParserState& state)
+{
+    Token type_token = shift_tokens(state);
+    Token file_token = shift_tokens(state);
+
+    type_check(type_token.type, TokenType::Identifier);
+    type_check(file_token.type, TokenType::String);
+
+    ImportType import_type = parse_import_type(type_token.text);
+    if (import_type == ImportType::None)
+        log_fatal("%.*s is not a valid import type", SV_ARG(type_token.text));
+
+    if (import_type == ImportType::Symbol)
+    {
+        auto new_symbols = read_symbol_table(file_token.text);
+        state.symbols.merge(new_symbols);
+    }
+}
+
+std::vector<Patch> parse_script(std::span<Token> tokens)
+{
+    ParserState state = {};
+    state.tokens = tokens;
+
+    while (true)
+    {
+        Token token = shift_tokens(state);
+        if (token.type == TokenType::Eof)
+            break;
+
+        switch (token.type)
+        {
+            case TokenType::Newline:
+                break;
+            case TokenType::Import:
+                parse_import(state);
+                break;
+            default:
+                log_fatal("missing parser implementation");
+                break;
+        }
+    }
+
+    for (const auto& [name, address] : state.symbols)
+        std::printf("%s = %.08X\n", name.c_str(), address);
+
+    return state.patches;
 }
 
 std::vector<Patch> compile_script(std::string_view file_path)

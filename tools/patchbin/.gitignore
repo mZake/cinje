@@ -3,3 +3,5 @@ patchbin
 patchbin.exe
 tests/lexer
 tests/lexer.exe
+tests/parser
+tests/parser.exe
