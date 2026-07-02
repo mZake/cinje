@@ -2,6 +2,7 @@
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <span>
 #include <string_view>
@@ -326,6 +327,59 @@ static void parse_import(ParserState& state)
     }
 }
 
+static PointerType parse_pointer_type(std::string_view text)
+{
+    if (text == "data")
+        return PointerType::Data;
+    if (text == "func")
+        return PointerType::Function;
+
+    return PointerType::None;
+}
+
+#if defined(__linux__)
+    #include <endian.h>
+    #define HTOLE32(x) htole32(x)
+#elif defined(_WIN32) // Windows is always little-endian
+    #define HTOLE32(x) (x)
+#else
+    #error Unsupported platform
+#endif
+
+static void parse_pointer(ParserState& state)
+{
+    Token type_token = shift_tokens(state);
+    Token offset_token = shift_tokens(state);
+    Token symbol_token = shift_tokens(state);
+
+    type_check(type_token.type, TokenType::Identifier);
+    type_check(offset_token.type, TokenType::Number);
+    type_check(symbol_token.type, TokenType::Identifier);
+
+    PointerType pointer_type = parse_pointer_type(type_token.text);
+    if (pointer_type == PointerType::None)
+        log_fatal("%.*s is not a valid pointer type", SV_ARG(type_token.text));
+
+    auto it = state.symbols.find(symbol_token.text);
+    if (it == state.symbols.end())
+        log_fatal("symbol %.*s not found", SV_ARG(symbol_token.text));
+
+    uint32_t address = it->second;
+    if (pointer_type == PointerType::Data)
+        address = HTOLE32(it->second);
+    else if (pointer_type == PointerType::Function)
+        address = HTOLE32(it->second | 1);
+
+    std::vector<uint8_t> bytes;
+    bytes.resize(sizeof(uint32_t));
+    std::memcpy(bytes.data(), &address, sizeof(uint32_t));
+
+    Patch patch = {};
+    patch.offset = offset_token.number;
+    patch.bytes = std::move(bytes);
+    state.patches.push_back(patch);
+}
+
 std::vector<Patch> parse_script(std::span<Token> tokens)
 {
     ParserState state = {};
@@ -343,6 +397,9 @@ std::vector<Patch> parse_script(std::span<Token> tokens)
                 break;
             case TokenType::Import:
                 parse_import(state);
+                break;
+            case TokenType::Pointer:
+                parse_pointer(state);
                 break;
             default:
                 log_fatal("missing parser implementation");
