@@ -407,8 +407,9 @@ std::vector<Patch> parse_script(std::span<Token> tokens)
         }
     }
 
+    std::printf("Symbol table:\n");
     for (const auto& [name, address] : state.symbols)
-        std::printf("%s = %.08X\n", name.c_str(), address);
+        std::printf("  %s = %.08X\n", name.c_str(), address);
 
     return state.patches;
 }
