@@ -35,10 +35,10 @@ enum class PointerType
 
 struct Token
 {
-    TokenType type;
-    size_t line;
-    size_t column;
-    uint32_t number;
+    TokenType type = TokenType::Eof;
+    size_t line = 0;
+    size_t column = 0;
+    uint32_t number = 0;
     std::string text;
 };
 

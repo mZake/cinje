@@ -35,16 +35,16 @@ struct LexerState
 {
     std::vector<Token> tokens;
     std::string_view source;
-    size_t index;
-    size_t line;
-    size_t column;
+    size_t index = 0;
+    size_t line = 0;
+    size_t column = 0;
 };
 
 struct ParserState
 {
     std::vector<Node> nodes;
     std::span<Token> tokens;
-    size_t index;
+    size_t index = 0;
 };
 
 static std::unordered_map<std::string_view, TokenType> s_keyword_table =
@@ -119,7 +119,7 @@ static std::string_view token_type_name(TokenType type)
 
 static void add_token(LexerState& state, TokenType type)
 {
-    Token token = {};
+    Token token;
     token.type = type;
     token.line = state.line;
     token.column = state.column;
@@ -128,7 +128,7 @@ static void add_token(LexerState& state, TokenType type)
 
 static void add_token(LexerState& state, TokenType type, std::string_view text)
 {
-    Token token = {};
+    Token token;
     token.type = type;
     token.line = state.line;
     token.column = state.column;
@@ -138,7 +138,7 @@ static void add_token(LexerState& state, TokenType type, std::string_view text)
 
 static void add_token(LexerState& state, TokenType type, uint32_t number)
 {
-    Token token = {};
+    Token token;
     token.type = type;
     token.line = state.line;
     token.column = state.column;
@@ -174,7 +174,7 @@ static std::string_view extract_lexeme(const LexerState& state, size_t first)
 
 std::vector<Token> tokenize_script(std::string_view source)
 {
-    LexerState state = {};
+    LexerState state;
     state.source = source;
     state.line = 1;
     state.column = 1;
@@ -396,7 +396,7 @@ static void parse_hook(ParserState& state)
 
 std::vector<Node> parse_script(std::span<Token> tokens)
 {
-    ParserState state = {};
+    ParserState state;
     state.tokens = tokens;
 
     while (true)
