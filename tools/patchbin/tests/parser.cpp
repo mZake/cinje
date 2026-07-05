@@ -10,21 +10,44 @@ static const char* s_source = R"(
     pointer func 804020 Bar
 )";
 
-static void print_patch(const Patch& patch)
+static void print_node(const ImportNode& node)
 {
-    std::printf("  %.06X", patch.offset);
-    for (uint8_t byte : patch.bytes)
-        std::printf(" %.02X", byte);
-    std::printf("\n");
+    std::printf("Import:\n");
+    std::printf("- Type: %d\n", (int)node.type);
+    std::printf("- File: %s\n", node.filepath.c_str());
+}
+
+static void print_node(const PointerNode& node)
+{
+    std::printf("Pointer:\n");
+    std::printf("- Type: %d\n", (int)node.type);
+    std::printf("- Offset: %.06X\n", node.offset);
+    std::printf("- Symbol: %s\n", node.symbol.c_str());
+}
+
+static void print_node(const WrapperNode& node)
+{
+    std::printf("Wrapper:\n");
+    std::printf("- Offset: %.06X\n", node.offset);
+    std::printf("- Argument Count: %d\n", node.argument_count);
+    std::printf("- Returns: %b\n", node.returns);
+    std::printf("- Symbol: %s\n", node.symbol.c_str());
+}
+
+static void print_node(const HookNode& node)
+{
+    std::printf("Hook:\n");
+    std::printf("- Offset: %.06X\n", node.offset);
+    std::printf("- Argument Count: %d\n", node.argument_count);
+    std::printf("- Symbol: %s\n", node.symbol.c_str());
 }
 
 int main()
 {
     auto tokens = tokenize_script(s_source);
-    auto patches = parse_script(tokens);
+    auto nodes = parse_script(tokens);
 
-    std::printf("Generated patches:\n");
-    for (const auto& patch : patches)
-        print_patch(patch);
+    for (const auto& node : nodes)
+        std::visit([](auto&& node) { print_node(node); }, node);
 }
 

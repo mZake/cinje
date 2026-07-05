@@ -18,19 +18,18 @@
 /* Available commands:
  *   import   <type> <file>
  *   pointer  <type> <offset> <symbol>
- *   wrapper  <offset> <symbol>
- *   hook     <offset> <symbol>
+ *   wrapper  <offset> <num-args> <returns> <symbol>
+ *   hook     <offset> <num-args> <symbol>
  */
 
-enum class ImportType
-{
-    None, Symbol
-};
-
-enum class PointerType
-{
-    None, Function, Data
-};
+#if defined(__linux__)
+    #include <endian.h>
+    #define HTOLE32(x) htole32(x)
+#elif defined(_WIN32) // Windows is always little-endian
+    #define HTOLE32(x) (x)
+#else
+    #error Unsupported platform
+#endif
 
 struct LexerState
 {
@@ -43,8 +42,7 @@ struct LexerState
 
 struct ParserState
 {
-    std::vector<Patch> patches;
-    std::unordered_map<std::string, uint32_t> symbols;
+    std::vector<Node> nodes;
     std::span<Token> tokens;
     size_t index;
 };
@@ -259,6 +257,7 @@ std::vector<Token> tokenize_script(std::string_view source)
     return state.tokens;
 }
 
+/*
 #include <sstream>
 
 static std::unordered_map<std::string, uint32_t> read_symbol_table(std::string_view filepath)
@@ -283,10 +282,24 @@ static std::unordered_map<std::string, uint32_t> read_symbol_table(std::string_v
 
     return symbols;
 }
+*/
 
-static Token shift_tokens(ParserState& state)
+static ImportType parse_import_type(std::string_view text)
 {
-    return state.tokens[state.index++];
+    if (text == "sym")
+        return ImportType::Symbol;
+
+    return ImportType::None;
+}
+
+static PointerType parse_pointer_type(std::string_view text)
+{
+    if (text == "data")
+        return PointerType::Data;
+    if (text == "func")
+        return PointerType::Function;
+
+    return PointerType::None;
 }
 
 static void type_check(TokenType actual_type, TokenType expected_type)
@@ -300,87 +313,88 @@ static void type_check(TokenType actual_type, TokenType expected_type)
     log_fatal("expected %.*s, got %.*s", SV_ARG(actual_name), SV_ARG(expected_name));
 }
 
-static ImportType parse_import_type(std::string_view text)
+static Token shift_tokens(ParserState& state)
 {
-    if (text == "sym")
-        return ImportType::Symbol;
-
-    return ImportType::None;
+    return state.tokens[state.index++];
 }
 
 static void parse_import(ParserState& state)
 {
-    Token type_token = shift_tokens(state);
-    Token file_token = shift_tokens(state);
+    Token type_tok = shift_tokens(state);
+    Token file_tok = shift_tokens(state);
 
-    type_check(type_token.type, TokenType::Identifier);
-    type_check(file_token.type, TokenType::String);
+    type_check(type_tok.type, TokenType::Identifier);
+    type_check(file_tok.type, TokenType::String);
 
-    ImportType import_type = parse_import_type(type_token.text);
-    if (import_type == ImportType::None)
-        log_fatal("%.*s is not a valid import type", SV_ARG(type_token.text));
+    ImportType type = parse_import_type(type_tok.text);
+    if (type == ImportType::None)
+        log_fatal("%.*s is not a valid import type", SV_ARG(type_tok.text));
 
-    if (import_type == ImportType::Symbol)
-    {
-        auto new_symbols = read_symbol_table(file_token.text);
-        state.symbols.merge(new_symbols);
-    }
+    ImportNode node;
+    node.type = type;
+    node.filepath = file_tok.text;
+    state.nodes.push_back(node);
 }
-
-static PointerType parse_pointer_type(std::string_view text)
-{
-    if (text == "data")
-        return PointerType::Data;
-    if (text == "func")
-        return PointerType::Function;
-
-    return PointerType::None;
-}
-
-#if defined(__linux__)
-    #include <endian.h>
-    #define HTOLE32(x) htole32(x)
-#elif defined(_WIN32) // Windows is always little-endian
-    #define HTOLE32(x) (x)
-#else
-    #error Unsupported platform
-#endif
 
 static void parse_pointer(ParserState& state)
 {
-    Token type_token = shift_tokens(state);
-    Token offset_token = shift_tokens(state);
-    Token symbol_token = shift_tokens(state);
+    Token type_tok = shift_tokens(state);
+    Token off_tok = shift_tokens(state);
+    Token sym_tok = shift_tokens(state);
 
-    type_check(type_token.type, TokenType::Identifier);
-    type_check(offset_token.type, TokenType::Number);
-    type_check(symbol_token.type, TokenType::Identifier);
+    type_check(type_tok.type, TokenType::Identifier);
+    type_check(off_tok.type, TokenType::Number);
+    type_check(sym_tok.type, TokenType::Identifier);
 
-    PointerType pointer_type = parse_pointer_type(type_token.text);
-    if (pointer_type == PointerType::None)
-        log_fatal("%.*s is not a valid pointer type", SV_ARG(type_token.text));
+    PointerType type = parse_pointer_type(type_tok.text);
+    if (type == PointerType::None)
+        log_fatal("%.*s is not a valid pointer type", SV_ARG(type_tok.text));
 
-    auto it = state.symbols.find(symbol_token.text);
-    if (it == state.symbols.end())
-        log_fatal("symbol %.*s not found", SV_ARG(symbol_token.text));
-
-    uint32_t address = it->second;
-    if (pointer_type == PointerType::Data)
-        address = HTOLE32(it->second);
-    else if (pointer_type == PointerType::Function)
-        address = HTOLE32(it->second | 1);
-
-    std::vector<uint8_t> bytes;
-    bytes.resize(sizeof(uint32_t));
-    std::memcpy(bytes.data(), &address, sizeof(uint32_t));
-
-    Patch patch = {};
-    patch.offset = offset_token.number;
-    patch.bytes = std::move(bytes);
-    state.patches.push_back(patch);
+    PointerNode node;
+    node.type = type;
+    node.offset = off_tok.number;
+    node.symbol = sym_tok.text;
+    state.nodes.push_back(node);
 }
 
-std::vector<Patch> parse_script(std::span<Token> tokens)
+static void parse_wrapper(ParserState& state)
+{
+    Token off_tok = shift_tokens(state);
+    Token num_tok = shift_tokens(state);
+    Token ret_tok = shift_tokens(state);
+    Token sym_tok = shift_tokens(state);
+
+    type_check(off_tok.type, TokenType::Number);
+    type_check(num_tok.type, TokenType::Number);
+    type_check(ret_tok.type, TokenType::Number);
+    type_check(sym_tok.type, TokenType::Identifier);
+
+    WrapperNode node;
+    node.offset = off_tok.number;
+    node.argument_count = num_tok.number;
+    node.returns = ret_tok.number;
+    node.symbol = sym_tok.text;
+    state.nodes.push_back(node);
+}
+
+static void parse_hook(ParserState& state)
+{
+    Token off_tok = shift_tokens(state);
+    Token num_tok = shift_tokens(state);
+    Token sym_tok = shift_tokens(state);
+
+    type_check(off_tok.type, TokenType::Number);
+    type_check(num_tok.type, TokenType::Number);
+    type_check(sym_tok.type, TokenType::Identifier);
+
+    HookNode node;
+    node.offset = off_tok.number;
+    node.argument_count = num_tok.number;
+    node.symbol = sym_tok.text;
+    state.nodes.push_back(node);
+}
+
+std::vector<Node> parse_script(std::span<Token> tokens)
 {
     ParserState state = {};
     state.tokens = tokens;
@@ -401,17 +415,19 @@ std::vector<Patch> parse_script(std::span<Token> tokens)
             case TokenType::Pointer:
                 parse_pointer(state);
                 break;
+            case TokenType::Wrapper:
+                parse_wrapper(state);
+                break;
+            case TokenType::Hook:
+                parse_hook(state);
+                break;
             default:
                 log_fatal("missing parser implementation");
                 break;
         }
     }
 
-    std::printf("Symbol table:\n");
-    for (const auto& [name, address] : state.symbols)
-        std::printf("  %s = %.08X\n", name.c_str(), address);
-
-    return state.patches;
+    return state.nodes;
 }
 
 std::vector<Patch> compile_script(std::string_view file_path)
