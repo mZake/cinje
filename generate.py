@@ -177,36 +177,26 @@ def collect_asm_files() -> tuple:
     return (files_in, files_out)
 
 def main():
+    os.makedirs(BUILD_DIR, exist_ok=True)
+    
+    devkitarm_symlink = os.path.join(BUILD_DIR, "devkitarm")
+    if not os.path.exists(devkitarm_symlink):
+        os.symlink(DEVKITARM, os.path.join(BUILD_DIR, "devkitarm"), target_is_directory=True)
+
     build_tools()
 
     with Generator("build.ninja") as gen:
         BLOB_OBJ = os.path.join(BUILD_DIR, "blob.o")
 
-        preproc_path = get_local_tool_path("preproc")
-        gbagfx_path = get_local_tool_path("gbagfx")
-        patchbin_path = get_local_tool_path("patchbin")
-        gcc_path = get_devkitarm_tool_path("gcc")
-        ld_path = get_devkitarm_tool_path("ld")
-        objcopy_path = get_devkitarm_tool_path("objcopy")
-        python_path = sys.executable
-
-        gen.write_var("preproc", preproc_path)
-        gen.write_var("gbagfx", gbagfx_path)
-        gen.write_var("patchbin", patchbin_path)
-        gen.write_var("gcc", gcc_path)
-        gen.write_var("ld", ld_path)
-        gen.write_var("objcopy", objcopy_path)
-        gen.break_line()
-
         gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
         gen.write_var("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
         gen.break_line()
 
-        gen.write_rule("gfx", command="$gbagfx $in $out")
-        gen.write_rule("cc", command=f"$gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | $preproc -i $in charmap.txt | $gcc $cflags -xc -o $out -c -", depfile="$out.d")
-        gen.write_rule("asm", command=f"$gcc $cflags -I{ASM_DIR} -o $out -c $in")
-        gen.write_rule("link", command="$ld $ldflags -o $out $in")
-        gen.write_rule("insert", command="$objcopy -O binary $obj_file $obj_file.bin && $patchbin $base_rom $out $obj_file.bin $offset")
+        gen.write_rule("gfx", command="gbagfx $in $out")
+        gen.write_rule("cc", command=f"arm-none-eabi-gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | preproc -i $in charmap.txt | arm-none-eabi-gcc $cflags -xc -o $out -c -", depfile="$out.d")
+        gen.write_rule("asm", command=f"arm-none-eabi-gcc $cflags -I{ASM_DIR} -o $out -c $in")
+        gen.write_rule("link", command="arm-none-eabi-ld $ldflags -o $out $in")
+        gen.write_rule("insert", command="arm-none-eabi-objcopy -O binary $obj_file $obj_file.bin && patchbin $base_rom $out $obj_file.bin $offset")
 
         gfx_jobs = collect_gfx_files()
         for file_in, file_out in gfx_jobs:
