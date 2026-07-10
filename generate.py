@@ -20,6 +20,9 @@ INC_DIR = "include"
 SRC_DIR = "src"
 TOOLS_DIR = "tools"
 
+BLOB_OBJECT = f"{BUILD_DIR}/blob.o"
+BLOB_BINARY = f"{BUILD_DIR}/blob.bin"
+
 # Required for MinGW, MSYS2 and Cygwin
 EXE_SUFFIX = ".exe" if os.getenv("OS") == "Windows_NT" else ""
 
@@ -120,8 +123,6 @@ def derive_files(inputs: str | list[str], pattern: str) -> list[str]:
     return outputs
 
 def main():
-    BLOB_OBJ = os.path.join(BUILD_DIR, "blob.o")
-
     os.makedirs(BUILD_DIR, exist_ok=True)
 
     devkitarm_symlink = os.path.join(BUILD_DIR, "devkitarm")
@@ -159,7 +160,7 @@ def main():
         writer.rule("cc", command=f"arm-none-eabi-gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | preproc -i $in charmap.txt | arm-none-eabi-gcc $cflags -xc -o $out -c -", depfile="$out.d")
         writer.rule("asm", command=f"arm-none-eabi-gcc $cflags -I{ASM_DIR} -o $out -c $in")
         writer.rule("link", command="arm-none-eabi-ld $ldflags -o $out $in")
-        writer.rule("insert", command="arm-none-eabi-objcopy -O binary $obj_file $obj_file.bin && patchbin $base_rom $out $obj_file.bin $offset")
+        writer.rule("bin", command="arm-none-eabi-objcopy -O binary $in $out")
 
         writer.build_list("gfx", png_files, bpp1_files)
         writer.build_list("gfx", png_files, bpp4_files)
@@ -173,10 +174,8 @@ def main():
         writer.build_list("asm", asm_sources, asm_objects)
 
         if all_objects:
-            writer.build("link", all_objects, BLOB_OBJ)
-            writer.build("insert", [BASE_ROM_FILE, BLOB_OBJ], OUT_ROM_FILE,
-                     base_rom=BASE_ROM_FILE,
-                     obj_file=BLOB_OBJ,
-                     offset=f"{OFFSET_TO_INSERT:06X}")
+            writer.build("link", all_objects, BLOB_OBJECT)
+            writer.build("bin", BLOB_OBJECT, BLOB_BINARY)
+            # TODO: Once Patchbin is ready, add build statement for patching here
 
 if __name__ == "__main__": main()
