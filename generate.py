@@ -63,6 +63,13 @@ class Writer:
         for key, value in kwargs.items():
             self._line(f"{key} = {value}", indent=2)
 
+    def build_list(self, rule: str, inputs: list[str], outputs: list[str], **kwargs):
+        if not (inputs and outputs):
+            return
+        for input, output in zip(inputs, outputs):
+            self.build(rule, input, output, **kwargs)
+        self.newline()
+
     def _line(self, text: str, indent: int = 0):
         stripped = text.lstrip()
         length = len(stripped) + indent
@@ -100,91 +107,46 @@ def build_tools():
         dest_exe = os.path.join(BIN_DIR, exe_name)
         shutil.copy2(src_exe, dest_exe)
 
-def get_devkitarm_tool_path(name: str) -> str:
-    tool_path = os.path.join(DEVKITARM, "bin", f"arm-none-eabi-{name}{EXE_SUFFIX}")
-    if not os.path.exists(tool_path) or not os.path.isfile(tool_path):
-        print(f"Error: could not find {name} (searched at {tool_path})")
-        sys.exit(1)
+def collect_files(directory: str, extension: str):
+    return glob.glob(f"{directory}/**/*{extension}", recursive=True)
 
-    print(f"Found {name} at {tool_path}")
-    return tool_path
+def derive_files(inputs: str | list[str], pattern: str) -> list[str]:
+    outputs = list()
+    for input in as_list(inputs):
+        stem = os.path.splitext(input)[0]
+        output = pattern.replace("%", stem)
+        outputs.append(output)
 
-def get_local_tool_path(name: str) -> str:
-    tool_path = os.path.join(BUILD_DIR, TOOLS_DIR, f"{name}{EXE_SUFFIX}")
-    if not os.path.exists(tool_path) or not os.path.isfile(tool_path):
-        print(f"Error: could not find {name} (searched at {tool_path})")
-        sys.exit(1)
-
-    print(f"Found {name} at {tool_path}")
-    return tool_path
-
-def change_file_ext(file: str, ext: str) -> str:
-    return os.path.splitext(file)[0] + ext
-
-def collect_gfx_files():
-    build_jobs = []
-
-    files_png = glob.glob(f"{GFX_DIR}/**/*.png", recursive=True)
-    files_png.sort()
-    for file_png in files_png:
-        file_1bpp = change_file_ext(file_png, ".1bpp")
-        file_4bpp = change_file_ext(file_png, ".4bpp")
-        file_8bpp = change_file_ext(file_png, ".8bpp")
-        file_gbapal = change_file_ext(file_png, ".gbapal")
-        file_1bpp_lz = change_file_ext(file_png, ".1bpp.lz")
-        file_4bpp_lz = change_file_ext(file_png, ".4bpp.lz")
-        file_8bpp_lz = change_file_ext(file_png, ".8bpp.lz")
-
-        build_jobs.append((file_png, file_1bpp))
-        build_jobs.append((file_png, file_4bpp))
-        build_jobs.append((file_png, file_8bpp))
-        build_jobs.append((file_png, file_gbapal))
-        build_jobs.append((file_1bpp, file_1bpp_lz))
-        build_jobs.append((file_4bpp, file_4bpp_lz))
-        build_jobs.append((file_8bpp, file_8bpp_lz))
-
-    files_bin = glob.glob(f"{GFX_DIR}/**/*.bin", recursive=True)
-    files_bin.sort()
-    for file_bin in files_bin:
-        file_bin_lz = change_file_ext(file_bin, ".bin.lz")
-        build_jobs.append((file_bin, file_bin_lz))
-
-    return build_jobs
-
-def collect_c_files() -> tuple:
-    files_out = []
-
-    files_in = glob.glob(f"{SRC_DIR}/**/*.c", recursive=True)
-    files_in.sort()
-    for file_in in files_in:
-        file_out = change_file_ext(file_in, ".o")
-        file_out = os.path.join(BUILD_DIR, file_out)
-        files_out.append(file_out)
-
-    return (files_in, files_out)
-
-def collect_asm_files() -> tuple:
-    files_out = []
-
-    files_in = glob.glob(f"{ASM_DIR}/**/*.s", recursive=True)
-    files_in.sort()
-    for file_in in files_in:
-        file_out = change_file_ext(file_in, ".o")
-        file_out = os.path.join(BUILD_DIR, file_out)
-        files_out.append(file_out)
-
-    return (files_in, files_out)
+    return outputs
 
 def main():
     BLOB_OBJ = os.path.join(BUILD_DIR, "blob.o")
 
     os.makedirs(BUILD_DIR, exist_ok=True)
-    
+
     devkitarm_symlink = os.path.join(BUILD_DIR, "devkitarm")
     if not os.path.exists(devkitarm_symlink):
         os.symlink(DEVKITARM, os.path.join(BUILD_DIR, "devkitarm"), target_is_directory=True)
 
     build_tools()
+
+    # Inputs
+    png_files = collect_files(GFX_DIR, ".png")
+    c_sources = collect_files(SRC_DIR, ".c")
+    asm_sources = collect_files(ASM_DIR, ".s")
+
+    # Outputs
+    bpp1_files = derive_files(png_files, "%.1bpp")
+    bpp4_files = derive_files(png_files, "%.4bpp")
+    bpp8_files = derive_files(png_files, "%.8bpp")
+
+    bpp1_lz_files = derive_files(png_files, "%.1bpp.lz")
+    bpp4_lz_files = derive_files(png_files, "%.4bpp.lz")
+    bpp8_lz_files = derive_files(png_files, "%.8bpp.lz")
+
+    c_objects = derive_files(c_sources, f"{BUILD_DIR}/%.o")
+    asm_objects = derive_files(asm_sources, f"{BUILD_DIR}/%.o")
+    all_objects = c_objects + asm_objects
 
     with open("build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
@@ -199,26 +161,20 @@ def main():
         writer.rule("link", command="arm-none-eabi-ld $ldflags -o $out $in")
         writer.rule("insert", command="arm-none-eabi-objcopy -O binary $obj_file $obj_file.bin && patchbin $base_rom $out $obj_file.bin $offset")
 
-        gfx_jobs = collect_gfx_files()
-        for file_in, file_out in gfx_jobs:
-            writer.build("gfx", file_in, file_out)
+        writer.build_list("gfx", png_files, bpp1_files)
+        writer.build_list("gfx", png_files, bpp4_files)
+        writer.build_list("gfx", png_files, bpp8_files)
 
-        if gfx_jobs: writer.newline()
-        c_srcs, c_objs = collect_c_files()
-        for c_src, c_obj in zip(c_srcs, c_objs):
-            writer.build("cc", c_src, c_obj)
+        writer.build_list("gfx", bpp1_files, bpp1_lz_files)
+        writer.build_list("gfx", bpp4_files, bpp4_lz_files)
+        writer.build_list("gfx", bpp8_files, bpp8_lz_files)
 
-        if c_srcs: writer.newline()
-        asm_srcs, asm_objs = collect_asm_files()
-        for asm_src, asm_obj in zip(asm_srcs, asm_objs):
-            writer.build("asm", asm_src, asm_obj)
+        writer.build_list("cc", c_sources, c_objects)
+        writer.build_list("asm", asm_sources, asm_objects)
 
-        if asm_srcs: writer.newline()
-        all_objs = c_objs + asm_objs
-        writer.build("link", all_objs, BLOB_OBJ)
-
-        if all_objs: writer.newline()
-        writer.build("insert", [BASE_ROM_FILE, BLOB_OBJ], OUT_ROM_FILE,
+        if all_objects:
+            writer.build("link", all_objects, BLOB_OBJ)
+            writer.build("insert", [BASE_ROM_FILE, BLOB_OBJ], OUT_ROM_FILE,
                      base_rom=BASE_ROM_FILE,
                      obj_file=BLOB_OBJ,
                      offset=f"{OFFSET_TO_INSERT:06X}")
