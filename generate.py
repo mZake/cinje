@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 
+from io import BufferedWriter
+
 # Change this if needed
 OFFSET_TO_INSERT = 0x1400000
 BASE_ROM_FILE = "base.gba"
@@ -34,47 +36,44 @@ if ADDRESS_TO_INSERT < ROM_BEGIN or ADDRESS_TO_INSERT > ROM_END:
     print("Error: offset to insert must be between 0x0 - 0x1FFFFFF")
     sys.exit(1)
 
-class Generator:
-    def __init__(self, file_path: str):
-        self.file_path = file_path
-        self.stream = None
+class Writer:
+    def __init__(self, stream: BufferedWriter):
+        self.stream = stream
 
-    def __enter__(self):
-        self.stream = open(self.file_path, "w", encoding="utf-8")
-        return self
+    def newline(self):
+        self.stream.write("\n")
 
-    def __exit__(self, exc_type, exc, tb):
-        if self.stream is not None:
-            self.stream.close()
-        return False
+    def comment(self, text: str):
+        self._line(f"# {text}")
 
-    def write_var(self, name: str, value: str):
-        self.stream.write(f"{name} = {value}\n")
+    def variable(self, key: str, value: str):
+        self._line(f"{key} = {value}")
 
-    def write_rule(self, name: str, **kwargs):
-        self.stream.write(f"rule {name}\n")
+    def rule(self, name: str, **kwargs):
+        self._line(f"rule {name}")
         for key, value in kwargs.items():
-            self.stream.write(f"  {key} = {value}\n")
-        self.stream.write("\n")
+            self._line(f"{key} = {value}", indent=2)
+        self.newline()
 
-    def write_build(self, rule: str, files_out: str | list, files_in: str | list, **kwargs):
-        if isinstance(files_in, str): files_in = [files_in]
-        if isinstance(files_out, str): files_out = [files_out]
+    def build(self, rule: str, inputs: str | list[str], outputs: str | list[str], **kwargs):
+        inputs_text = " ".join(as_list(inputs))
+        outputs_text = " ".join(as_list(outputs))
 
-        self.stream.write("build")
-        for file_out in files_out:
-            self.stream.write(f" {file_out}")
-
-        self.stream.write(f": {rule}")
-        for file_in in files_in:
-            self.stream.write(f" {file_in}")
-
-        self.stream.write("\n")
+        self._line(f"build {outputs_text}: {rule} {inputs_text}")
         for key, value in kwargs.items():
-            self.stream.write(f"  {key} = {value}\n")
+            self._line(f"{key} = {value}", indent=2)
 
-    def break_line(self):
-        self.stream.write("\n")
+    def _line(self, text: str, indent: int = 0):
+        stripped = text.lstrip()
+        length = len(stripped) + indent
+        self.stream.write(f"{stripped:>{length}}\n")
+
+def as_list(input: str | list[str] | None) -> list[str]:
+    if input is None:
+        return []
+    if isinstance(input, list):
+        return input
+    return [input]
 
 def build_tools():
     if not os.path.exists(TOOLS_DIR):
@@ -177,6 +176,8 @@ def collect_asm_files() -> tuple:
     return (files_in, files_out)
 
 def main():
+    BLOB_OBJ = os.path.join(BUILD_DIR, "blob.o")
+
     os.makedirs(BUILD_DIR, exist_ok=True)
     
     devkitarm_symlink = os.path.join(BUILD_DIR, "devkitarm")
@@ -185,41 +186,41 @@ def main():
 
     build_tools()
 
-    with Generator("build.ninja") as gen:
-        BLOB_OBJ = os.path.join(BUILD_DIR, "blob.o")
+    with open("build.ninja", "w", encoding="utf-8") as stream:
+        writer = Writer(stream)
 
-        gen.write_var("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
-        gen.write_var("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
-        gen.break_line()
+        writer.variable("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
+        writer.variable("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
+        writer.newline()
 
-        gen.write_rule("gfx", command="gbagfx $in $out")
-        gen.write_rule("cc", command=f"arm-none-eabi-gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | preproc -i $in charmap.txt | arm-none-eabi-gcc $cflags -xc -o $out -c -", depfile="$out.d")
-        gen.write_rule("asm", command=f"arm-none-eabi-gcc $cflags -I{ASM_DIR} -o $out -c $in")
-        gen.write_rule("link", command="arm-none-eabi-ld $ldflags -o $out $in")
-        gen.write_rule("insert", command="arm-none-eabi-objcopy -O binary $obj_file $obj_file.bin && patchbin $base_rom $out $obj_file.bin $offset")
+        writer.rule("gfx", command="gbagfx $in $out")
+        writer.rule("cc", command=f"arm-none-eabi-gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | preproc -i $in charmap.txt | arm-none-eabi-gcc $cflags -xc -o $out -c -", depfile="$out.d")
+        writer.rule("asm", command=f"arm-none-eabi-gcc $cflags -I{ASM_DIR} -o $out -c $in")
+        writer.rule("link", command="arm-none-eabi-ld $ldflags -o $out $in")
+        writer.rule("insert", command="arm-none-eabi-objcopy -O binary $obj_file $obj_file.bin && patchbin $base_rom $out $obj_file.bin $offset")
 
         gfx_jobs = collect_gfx_files()
         for file_in, file_out in gfx_jobs:
-            gen.write_build("gfx", file_out, file_in)
+            writer.build("gfx", file_in, file_out)
 
-        if gfx_jobs: gen.break_line()
+        if gfx_jobs: writer.newline()
         c_srcs, c_objs = collect_c_files()
         for c_src, c_obj in zip(c_srcs, c_objs):
-            gen.write_build("cc", c_obj, c_src)
+            writer.build("cc", c_src, c_obj)
 
-        if c_srcs: gen.break_line()
+        if c_srcs: writer.newline()
         asm_srcs, asm_objs = collect_asm_files()
         for asm_src, asm_obj in zip(asm_srcs, asm_objs):
-            gen.write_build("asm", asm_obj, asm_src)
+            writer.build("asm", asm_src, asm_obj)
 
-        if asm_srcs: gen.break_line()
+        if asm_srcs: writer.newline()
         all_objs = c_objs + asm_objs
-        gen.write_build("link", BLOB_OBJ, all_objs)
+        writer.build("link", all_objs, BLOB_OBJ)
 
-        if all_objs: gen.break_line()
-        gen.write_build("insert", OUT_ROM_FILE, [BASE_ROM_FILE, BLOB_OBJ],
-                        base_rom=BASE_ROM_FILE,
-                        obj_file=BLOB_OBJ,
-                        offset=f"{OFFSET_TO_INSERT:06X}")
+        if all_objs: writer.newline()
+        writer.build("insert", [BASE_ROM_FILE, BLOB_OBJ], OUT_ROM_FILE,
+                     base_rom=BASE_ROM_FILE,
+                     obj_file=BLOB_OBJ,
+                     offset=f"{OFFSET_TO_INSERT:06X}")
 
 if __name__ == "__main__": main()
