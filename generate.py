@@ -83,6 +83,11 @@ def fatal(message: str):
     sys.stderr.write("\n")
     sys.exit(1)
 
+def configure_directories():
+    os.makedirs(f"{BUILD_DIR}/{TOOLS_DIR}", exist_ok=True)
+    os.makedirs(f"{BUILD_DIR}/{SRC_DIR}", exist_ok=True)
+    os.makedirs(f"{BUILD_DIR}/{ASM_DIR}", exist_ok=True)
+
 def configure_toolchain():
     toolchain_path = os.getenv("DEVKITARM")
     if not toolchain_path:
@@ -104,7 +109,6 @@ def configure_tools():
         return
 
     output_path = f"{BUILD_DIR}/{TOOLS_DIR}"
-    os.makedirs(output_path, exist_ok=True)
 
     for name in os.listdir(TOOLS_DIR):
         source_path = f"{TOOLS_DIR}/{name}"
@@ -134,7 +138,7 @@ def derive_files(inputs: str | list[str], pattern: str) -> list[str]:
     return outputs
 
 def main():
-    os.makedirs(BUILD_DIR, exist_ok=True)
+    configure_directories()
     configure_toolchain()
     configure_tools()
 
