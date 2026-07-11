@@ -26,18 +26,7 @@ BLOB_BINARY = f"{BUILD_DIR}/blob.bin"
 # Required for MinGW, MSYS2 and Cygwin
 EXE_SUFFIX = ".exe" if os.getenv("OS") == "Windows_NT" else ""
 
-DEVKITARM = os.getenv("DEVKITARM")
-if not DEVKITARM:
-    print("Error: DEVKITARM enviroment variable is not set")
-    sys.exit(1)
-
-ROM_BEGIN = 0x8000000
-ROM_END = 0x9FFFFFF
-
 ADDRESS_TO_INSERT = OFFSET_TO_INSERT + 0x8000000
-if ADDRESS_TO_INSERT < ROM_BEGIN or ADDRESS_TO_INSERT > ROM_END:
-    print("Error: offset to insert must be between 0x0 - 0x1FFFFFF")
-    sys.exit(1)
 
 class Writer:
     def __init__(self, stream: BufferedWriter):
@@ -85,30 +74,52 @@ def as_list(input: str | list[str] | None) -> list[str]:
         return input
     return [input]
 
-def build_tools():
-    if not os.path.exists(TOOLS_DIR):
-        print("Error: tools directory not found")
-        sys.exit(1)
-    if not os.path.isdir(TOOLS_DIR):
-        print("Error: tools is not a directory")
-        sys.exit(1)
+def warning(message: str):
+    sys.stderr.write(f"generate.py: warning: {message}")
+    sys.stderr.write("\n")
 
-    BIN_DIR = os.path.join(BUILD_DIR, TOOLS_DIR)
-    os.makedirs(BIN_DIR, exist_ok=True)
+def fatal(message: str):
+    sys.stderr.write(f"generate.py: error: {message}")
+    sys.stderr.write("\n")
+    sys.exit(1)
+
+def configure_toolchain():
+    toolchain_path = os.getenv("DEVKITARM")
+    if not toolchain_path:
+        fatal("DEVKITARM environment is not set")
+    if not os.path.isdir(toolchain_path):
+        fatal(f"devkitARM directory not found: {toolchain_path}")
+
+    symlink_path = f"{BUILD_DIR}/toolchain"
+    if os.path.exists(symlink_path):
+        if not os.path.islink(symlink_path):
+            fatal(f"{symlink_path} is not a symlink")
+        os.unlink(symlink_path)
+
+    os.symlink(toolchain_path, symlink_path, target_is_directory=True)
+
+def configure_tools():
+    if not os.path.isdir(TOOLS_DIR):
+        warning(f"tools directory not found: {TOOLS_DIR}")
+        return
+
+    output_path = f"{BUILD_DIR}/{TOOLS_DIR}"
+    os.makedirs(output_path, exist_ok=True)
 
     for name in os.listdir(TOOLS_DIR):
-        src_dir = os.path.join(TOOLS_DIR, name)
-        if not os.path.isdir(src_dir):
+        source_path = f"{TOOLS_DIR}/{name}"
+        if not os.path.isdir(source_path):
             continue
 
-        result = subprocess.run(["ninja", "-C", src_dir])
+        result = subprocess.run(["ninja", "-C", source_path],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         if result.returncode != 0:
-            sys.exit(1)
+            sys.stderr.write(result.stdout)
+            fatal(f"failed to build tool {name}")
 
-        exe_name = name + EXE_SUFFIX
-        src_exe = os.path.join(src_dir, exe_name)
-        dest_exe = os.path.join(BIN_DIR, exe_name)
-        shutil.copy2(src_exe, dest_exe)
+        source_binary = f"{source_path}/{name}{EXE_SUFFIX}"
+        dest_binary = f"{output_path}/{name}{EXE_SUFFIX}"
+        shutil.copy2(source_binary, dest_binary)
 
 def collect_files(directory: str, extension: str):
     return glob.glob(f"{directory}/**/*{extension}", recursive=True)
@@ -124,12 +135,8 @@ def derive_files(inputs: str | list[str], pattern: str) -> list[str]:
 
 def main():
     os.makedirs(BUILD_DIR, exist_ok=True)
-
-    devkitarm_symlink = os.path.join(BUILD_DIR, "devkitarm")
-    if not os.path.exists(devkitarm_symlink):
-        os.symlink(DEVKITARM, os.path.join(BUILD_DIR, "devkitarm"), target_is_directory=True)
-
-    build_tools()
+    configure_toolchain()
+    configure_tools()
 
     # Inputs
     png_files = collect_files(GFX_DIR, ".png")
