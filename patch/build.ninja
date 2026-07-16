@@ -1,0 +1,6 @@
+cxxflags = -std=c++17 -Wall -Wextra
+
+rule cxx
+  command = g++ $cxxflags $in -o $out
+
+build test: cxx test.cpp | patchbin.hpp

@@ -17,11 +17,12 @@ ASM_DIR = "asm"
 BUILD_DIR = "build"
 GFX_DIR = "graphics"
 INC_DIR = "include"
+PATCH_DIR = "patch"
 SRC_DIR = "src"
 TOOLS_DIR = "tools"
 
 BLOB_OBJECT = f"{BUILD_DIR}/blob.o"
-BLOB_BINARY = f"{BUILD_DIR}/blob.bin"
+PATCHBIN = f"{PATCH_DIR}/patchbin"
 
 # Required for MinGW, MSYS2 and Cygwin
 EXE_SUFFIX = ".exe" if os.getenv("OS") == "Windows_NT" else ""
@@ -160,18 +161,38 @@ def main():
     asm_objects = derive_files(asm_sources, f"{BUILD_DIR}/%.o")
     all_objects = c_objects + asm_objects
 
+    # Patches are compiled for the host machine. They are getting placed
+    # here to avoid ambiguity.
+    patch_sources = collect_files(PATCH_DIR, ".cpp")
+    patch_objects = derive_files(patch_sources, f"{BUILD_DIR}/%.o")
+
     with open("build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
 
+        writer.variable("host_cxx", "g++")
+        writer.newline()
+
+        writer.variable("cxxflags", f"-std=c++17 -O2 -Wall -Wextra -I{INC_DIR}")
+        writer.newline()
+
+        writer.rule("host_cxx", command="$host_cxx $cxxflags -MMD -MF $out.d -MT $out -o $out -c $in", depfile="$out.d")
+        writer.rule("host_ld", command="$host_cxx -o $out $in")
+
+        writer.build_list("host_cxx", patch_sources, patch_objects)
+
+        if patch_objects:
+            writer.build("host_ld", patch_objects, PATCHBIN)
+            writer.newline()
+
         writer.variable("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
-        writer.variable("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
+        writer.variable("ldflags", f"-T linker.ld BPRE.ld -r --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
         writer.newline()
 
         writer.rule("gfx", command="gbagfx $in $out")
         writer.rule("cc", command=f"arm-none-eabi-gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | preproc -i $in charmap.txt | arm-none-eabi-gcc $cflags -xc -o $out -c -", depfile="$out.d")
         writer.rule("asm", command=f"arm-none-eabi-gcc $cflags -I{ASM_DIR} -o $out -c $in")
         writer.rule("link", command="arm-none-eabi-ld $ldflags -o $out $in")
-        writer.rule("bin", command="arm-none-eabi-objcopy -O binary $in $out")
+        writer.rule("patch", command=f"{PATCHBIN} $in $out")
 
         writer.build_list("gfx", png_files, bpp1_files)
         writer.build_list("gfx", png_files, bpp4_files)
@@ -186,7 +207,6 @@ def main():
 
         if all_objects:
             writer.build("link", all_objects, BLOB_OBJECT)
-            writer.build("bin", BLOB_OBJECT, BLOB_BINARY)
-            # TODO: Once Patchbin is ready, add build statement for patching here
+            writer.build("patch", [BASE_ROM_FILE, BLOB_OBJECT, "|", PATCHBIN], OUT_ROM_FILE)
 
 if __name__ == "__main__": main()
