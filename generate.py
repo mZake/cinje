@@ -184,29 +184,32 @@ def main():
             writer.build("host_ld", patch_objects, PATCHBIN)
             writer.newline()
 
+        writer.variable("cc", "arm-none-eabi-gcc")
+        writer.variable("ld", "arm-none-eabi-ld")
+        writer.newline()
         writer.variable("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
         writer.variable("ldflags", f"-T linker.ld BPRE.ld -r --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
         writer.newline()
 
-        writer.rule("gfx", command="gbagfx $in $out")
-        writer.rule("cc", command=f"arm-none-eabi-gcc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | preproc -i $in charmap.txt | arm-none-eabi-gcc $cflags -xc -o $out -c -", depfile="$out.d")
-        writer.rule("asm", command=f"arm-none-eabi-gcc $cflags -I{ASM_DIR} -o $out -c $in")
-        writer.rule("link", command="arm-none-eabi-ld $ldflags -o $out $in")
-        writer.rule("patch", command=f"{PATCHBIN} $in $out")
+        writer.rule("cc", command=f"$cc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | preproc -i $in charmap.txt | $cc $cflags -xc -o $out -c -", depfile="$out.d")
+        writer.rule("as", command=f"$cc $cflags -I{ASM_DIR} -o $out -c $in")
+        writer.rule("ld", command="$ld $ldflags -o $out $in")
+        writer.rule("gbagfx", command="gbagfx $in $out")
+        writer.rule("patchbin", command=f"{PATCHBIN} $in $out")
 
-        writer.build_list("gfx", png_files, bpp1_files)
-        writer.build_list("gfx", png_files, bpp4_files)
-        writer.build_list("gfx", png_files, bpp8_files)
+        writer.build_list("gbagfx", png_files, bpp1_files)
+        writer.build_list("gbagfx", png_files, bpp4_files)
+        writer.build_list("gbagfx", png_files, bpp8_files)
 
-        writer.build_list("gfx", bpp1_files, bpp1_lz_files)
-        writer.build_list("gfx", bpp4_files, bpp4_lz_files)
-        writer.build_list("gfx", bpp8_files, bpp8_lz_files)
+        writer.build_list("gbagfx", bpp1_files, bpp1_lz_files)
+        writer.build_list("gbagfx", bpp4_files, bpp4_lz_files)
+        writer.build_list("gbagfx", bpp8_files, bpp8_lz_files)
 
         writer.build_list("cc", c_sources, c_objects)
-        writer.build_list("asm", asm_sources, asm_objects)
+        writer.build_list("as", asm_sources, asm_objects)
 
         if all_objects:
-            writer.build("link", all_objects, BLOB_OBJECT)
-            writer.build("patch", [BASE_ROM_FILE, BLOB_OBJECT, "|", PATCHBIN], OUT_ROM_FILE)
+            writer.build("ld", all_objects, BLOB_OBJECT)
+            writer.build("patchbin", [BASE_ROM_FILE, BLOB_OBJECT, "|", PATCHBIN], OUT_ROM_FILE)
 
 if __name__ == "__main__": main()
