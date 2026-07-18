@@ -55,19 +55,45 @@ class Writer:
         self._line(f"depth = {depth}", indent=2)
         self.newline()
 
-    def build(self, rule: str, inputs: str | list[str], outputs: str | list[str], **kwargs):
-        inputs_text = " ".join(as_list(inputs))
-        outputs_text = " ".join(as_list(outputs))
+    def build(
+        self,
+        rule: str,
+        inputs: str | list[str],
+        outputs: str | list[str],
+        implicit_inputs: str | list[str] | None = None,
+        implicit_outputs: str | list[str] | None = None,
+        **kwargs,
+    ):
+        all_inputs = as_list(inputs)
+        if implicit_inputs is not None:
+            all_inputs.append("|")
+            all_inputs.extend(as_list(implicit_inputs))
+
+        all_outputs = as_list(outputs)
+        if implicit_outputs is not None:
+            all_outputs.append("|")
+            all_outputs.extend(as_list(implicit_outputs))
+
+        inputs_text = " ".join(as_list(all_inputs))
+        outputs_text = " ".join(as_list(all_outputs))
 
         self._line(f"build {outputs_text}: {rule} {inputs_text}")
         for key, value in kwargs.items():
             self._line(f"{key} = {value}", indent=2)
 
-    def build_list(self, rule: str, inputs: list[str], outputs: list[str], **kwargs):
+    def build_group(
+        self,
+        rule: str,
+        inputs: list[str],
+        outputs: list[str],
+        implicit_inputs: str | list[str] | None = None,
+        implicit_outputs: str | list[str] | None = None,
+        **kwargs,
+    ):
         if not (inputs and outputs):
             return
         for input, output in zip(inputs, outputs):
-            self.build(rule, input, output, **kwargs)
+            self.build(rule, input, output, implicit_inputs, implicit_outputs, **kwargs)
         self.newline()
 
     def _line(self, text: str, indent: int = 0):
@@ -169,7 +195,7 @@ def main():
         writer.rule("host_cxx", command="$host_cxx $cxxflags -MMD -MF $out.d -MT $out -o $out -c $in", depfile="$out.d")
         writer.rule("host_ld", command="$host_cxx -o $out $in")
 
-        writer.build_list("host_cxx", patch_sources, patch_objects)
+        writer.build_group("host_cxx", patch_sources, patch_objects)
 
         if patch_objects:
             writer.build("host_ld", patch_objects, PATCHBIN)
@@ -200,16 +226,16 @@ def main():
         writer.build("ninja", f"{TOOLS_DIR}/wav2agb", "$wav2agb")
         writer.newline()
 
-        writer.build_list("gbagfx", png_files, bpp1_files)
-        writer.build_list("gbagfx", png_files, bpp4_files)
-        writer.build_list("gbagfx", png_files, bpp8_files)
+        writer.build_group("gbagfx", png_files, bpp1_files, implicit_inputs="$gbagfx")
+        writer.build_group("gbagfx", png_files, bpp4_files, implicit_inputs="$gbagfx")
+        writer.build_group("gbagfx", png_files, bpp8_files, implicit_inputs="$gbagfx")
 
-        writer.build_list("gbagfx", bpp1_files, bpp1_lz_files)
-        writer.build_list("gbagfx", bpp4_files, bpp4_lz_files)
-        writer.build_list("gbagfx", bpp8_files, bpp8_lz_files)
+        writer.build_group("gbagfx", bpp1_files, bpp1_lz_files, implicit_inputs="$gbagfx")
+        writer.build_group("gbagfx", bpp4_files, bpp4_lz_files, implicit_inputs="$gbagfx")
+        writer.build_group("gbagfx", bpp8_files, bpp8_lz_files, implicit_inputs="$gbagfx")
 
-        writer.build_list("cc", c_sources, c_objects)
-        writer.build_list("as", asm_sources, asm_objects)
+        writer.build_group("cc", c_sources, c_objects, implicit_inputs="$preproc")
+        writer.build_group("as", asm_sources, asm_objects)
 
         if all_objects:
             writer.build("ld", all_objects, BLOB_OBJECT)
