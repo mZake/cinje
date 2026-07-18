@@ -22,10 +22,12 @@ SRC_DIR = "src"
 TOOLS_DIR = "tools"
 
 BLOB_OBJECT = f"{BUILD_DIR}/blob.o"
-PATCHBIN = f"{PATCH_DIR}/patchbin"
 
-# Required for MinGW, MSYS2 and Cygwin
-EXE_SUFFIX = ".exe" if os.getenv("OS") == "Windows_NT" else ""
+GBAGFX   = f"{TOOLS_DIR}/gbagfx/gbagfx"
+MID2AGB  = f"{TOOLS_DIR}/mid2agb/mid2agb"
+PATCHBIN = f"{PATCH_DIR}/patchbin"
+PREPROC  = f"{TOOLS_DIR}/preproc/preproc"
+WAV2AGB  = f"{TOOLS_DIR}/wav2agb/wav2agb"
 
 ADDRESS_TO_INSERT = OFFSET_TO_INSERT + 0x8000000
 
@@ -46,6 +48,11 @@ class Writer:
         self._line(f"rule {name}")
         for key, value in kwargs.items():
             self._line(f"{key} = {value}", indent=2)
+        self.newline()
+
+    def pool(self, name: str, depth: int):
+        self._line(f"pool {name}")
+        self._line(f"depth = {depth}", indent=2)
         self.newline()
 
     def build(self, rule: str, inputs: str | list[str], outputs: str | list[str], **kwargs):
@@ -104,28 +111,6 @@ def configure_toolchain():
 
     os.symlink(toolchain_path, symlink_path, target_is_directory=True)
 
-def configure_tools():
-    if not os.path.isdir(TOOLS_DIR):
-        warning(f"tools directory not found: {TOOLS_DIR}")
-        return
-
-    output_path = f"{BUILD_DIR}/{TOOLS_DIR}"
-
-    for name in os.listdir(TOOLS_DIR):
-        source_path = f"{TOOLS_DIR}/{name}"
-        if not os.path.isdir(source_path):
-            continue
-
-        result = subprocess.run(["ninja", "-C", source_path],
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        if result.returncode != 0:
-            sys.stderr.write(result.stdout)
-            fatal(f"failed to build tool {name}")
-
-        source_binary = f"{source_path}/{name}{EXE_SUFFIX}"
-        dest_binary = f"{output_path}/{name}{EXE_SUFFIX}"
-        shutil.copy2(source_binary, dest_binary)
-
 def collect_files(directory: str, extension: str):
     return glob.glob(f"{directory}/**/*{extension}", recursive=True)
 
@@ -141,7 +126,7 @@ def derive_files(inputs: str | list[str], pattern: str) -> list[str]:
 def main():
     configure_directories()
     configure_toolchain()
-    configure_tools()
+    # configure_tools()
 
     # Inputs
     png_files = collect_files(GFX_DIR, ".png")
@@ -169,6 +154,12 @@ def main():
     with open("build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
 
+        writer.pool("ninja_pool", depth=1)
+
+        writer.rule("ninja",
+                    command="ninja -C $in",
+                    pool="ninja_pool")
+
         writer.variable("host_cxx", "g++")
         writer.newline()
 
@@ -187,15 +178,27 @@ def main():
         writer.variable("cc", "arm-none-eabi-gcc")
         writer.variable("ld", "arm-none-eabi-ld")
         writer.newline()
+        writer.variable("gbagfx",   GBAGFX)
+        writer.variable("mid2agb",  MID2AGB)
+        writer.variable("patchbin", PATCHBIN)
+        writer.variable("preproc",  PREPROC)
+        writer.variable("wav2agb",  WAV2AGB)
+        writer.newline()
         writer.variable("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
         writer.variable("ldflags", f"-T linker.ld BPRE.ld -r --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
         writer.newline()
 
-        writer.rule("cc", command=f"$cc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | preproc -i $in charmap.txt | $cc $cflags -xc -o $out -c -", depfile="$out.d")
+        writer.rule("cc", command=f"$cc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | $preproc -i $in charmap.txt | $cc $cflags -xc -o $out -c -", depfile="$out.d")
         writer.rule("as", command=f"$cc $cflags -I{ASM_DIR} -o $out -c $in")
         writer.rule("ld", command="$ld $ldflags -o $out $in")
-        writer.rule("gbagfx", command="gbagfx $in $out")
-        writer.rule("patchbin", command=f"{PATCHBIN} $in $out")
+        writer.rule("gbagfx", command="$gbagfx $in $out")
+        writer.rule("patchbin", command=f"$patchbin $in $out")
+
+        writer.build("ninja", f"{TOOLS_DIR}/gbagfx",  "$gbagfx")
+        writer.build("ninja", f"{TOOLS_DIR}/mid2agb", "$mid2agb")
+        writer.build("ninja", f"{TOOLS_DIR}/preproc", "$preproc")
+        writer.build("ninja", f"{TOOLS_DIR}/wav2agb", "$wav2agb")
+        writer.newline()
 
         writer.build_list("gbagfx", png_files, bpp1_files)
         writer.build_list("gbagfx", png_files, bpp4_files)
