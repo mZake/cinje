@@ -176,8 +176,8 @@ def main():
     bpp4_lz_files = derive_files(png_inputs, f"{GFX_DIR}/%.4bpp.lz")
     bpp8_lz_files = derive_files(png_inputs, f"{GFX_DIR}/%.8bpp.lz")
 
-    c_objects = derive_files(c_sources, f"{C_BUILD_DIR}/%.o")
-    asm_objects = derive_files(asm_sources, f"{ASM_BUILD_DIR}/%.o")
+    c_objects = derive_files(c_inputs, f"{C_BUILD_DIR}/%.o")
+    asm_objects = derive_files(asm_inputs, f"{ASM_BUILD_DIR}/%.o")
     all_objects = c_objects + asm_objects
 
     # Patches are compiled for the host machine. They are getting placed
