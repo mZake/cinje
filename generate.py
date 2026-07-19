@@ -13,13 +13,17 @@ OFFSET_TO_INSERT = 0x1400000
 BASE_ROM_FILE = "base.gba"
 OUT_ROM_FILE = "out.gba"
 
-ASM_DIR = "asm"
 BUILD_DIR = "build"
 GFX_DIR = "graphics"
 INC_DIR = "include"
 PATCH_DIR = "patch"
-SRC_DIR = "src"
 TOOLS_DIR = "tools"
+
+C_SRC_DIR = "src"
+ASM_SRC_DIR = "asm"
+
+C_BUILD_DIR = f"{BUILD_DIR}/{C_SRC_DIR}"
+ASM_BUILD_DIR = f"{BUILD_DIR}/{ASM_SRC_DIR}"
 
 BLOB_OBJECT = f"{BUILD_DIR}/blob.o"
 
@@ -118,9 +122,8 @@ def fatal(message: str):
     sys.exit(1)
 
 def configure_directories():
-    os.makedirs(f"{BUILD_DIR}/{TOOLS_DIR}", exist_ok=True)
-    os.makedirs(f"{BUILD_DIR}/{SRC_DIR}", exist_ok=True)
-    os.makedirs(f"{BUILD_DIR}/{ASM_DIR}", exist_ok=True)
+    os.makedirs(C_BUILD_DIR, exist_ok=True)
+    os.makedirs(ASM_BUILD_DIR, exist_ok=True)
 
 def configure_toolchain():
     toolchain_path = os.getenv("DEVKITARM")
@@ -137,8 +140,9 @@ def configure_toolchain():
 
     os.symlink(toolchain_path, symlink_path, target_is_directory=True)
 
-def collect_files(directory: str, extension: str):
-    return glob.glob(f"{directory}/**/*{extension}", recursive=True)
+def collect_files(directory: str, extension: str) -> list[str]:
+    matches = glob.glob(f"{directory}/**/*{extension}", recursive=True)
+    return [os.path.relpath(x, directory) for x in matches]
 
 def derive_files(inputs: str | list[str], pattern: str) -> list[str]:
     outputs = list()
@@ -154,28 +158,33 @@ def main():
     configure_toolchain()
     # configure_tools()
 
+    png_inputs = collect_files(GFX_DIR, ".png")
+    c_inputs = collect_files(C_SRC_DIR, ".c")
+    asm_inputs = collect_files(ASM_SRC_DIR, ".s")
+
     # Inputs
-    png_files = collect_files(GFX_DIR, ".png")
-    c_sources = collect_files(SRC_DIR, ".c")
-    asm_sources = collect_files(ASM_DIR, ".s")
+    png_files = derive_files(png_inputs, f"{GFX_DIR}/%.png")
+    c_sources = derive_files(c_inputs, f"{C_SRC_DIR}/%.c")
+    asm_sources = derive_files(asm_inputs, f"{ASM_SRC_DIR}/%.s")
 
     # Outputs
-    bpp1_files = derive_files(png_files, "%.1bpp")
-    bpp4_files = derive_files(png_files, "%.4bpp")
-    bpp8_files = derive_files(png_files, "%.8bpp")
+    bpp1_files = derive_files(png_inputs, f"{GFX_DIR}/%.1bpp")
+    bpp4_files = derive_files(png_inputs, f"{GFX_DIR}/%.4bpp")
+    bpp8_files = derive_files(png_inputs, f"{GFX_DIR}/%.8bpp")
 
-    bpp1_lz_files = derive_files(png_files, "%.1bpp.lz")
-    bpp4_lz_files = derive_files(png_files, "%.4bpp.lz")
-    bpp8_lz_files = derive_files(png_files, "%.8bpp.lz")
+    bpp1_lz_files = derive_files(png_inputs, f"{GFX_DIR}/%.1bpp.lz")
+    bpp4_lz_files = derive_files(png_inputs, f"{GFX_DIR}/%.4bpp.lz")
+    bpp8_lz_files = derive_files(png_inputs, f"{GFX_DIR}/%.8bpp.lz")
 
-    c_objects = derive_files(c_sources, f"{BUILD_DIR}/%.o")
-    asm_objects = derive_files(asm_sources, f"{BUILD_DIR}/%.o")
+    c_objects = derive_files(c_sources, f"{C_BUILD_DIR}/%.o")
+    asm_objects = derive_files(asm_sources, f"{ASM_BUILD_DIR}/%.o")
     all_objects = c_objects + asm_objects
 
     # Patches are compiled for the host machine. They are getting placed
-    # here to avoid ambiguity.
-    patch_sources = collect_files(PATCH_DIR, ".cpp")
-    patch_objects = derive_files(patch_sources, f"{BUILD_DIR}/%.o")
+    # here to avoid ambiguity.    
+    patch_inputs = collect_files(PATCH_DIR, ".cpp")
+    patch_sources = derive_files(patch_inputs, f"{PATCH_DIR}/%.cpp")
+    patch_objects = derive_files(patch_inputs, f"{C_BUILD_DIR}/%.o")
 
     with open("build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
@@ -215,7 +224,7 @@ def main():
         writer.newline()
 
         writer.rule("cc", command=f"$cc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | $preproc -i $in charmap.txt | $cc $cflags -xc -o $out -c -", depfile="$out.d")
-        writer.rule("as", command=f"$cc $cflags -I{ASM_DIR} -o $out -c $in")
+        writer.rule("as", command=f"$cc $cflags -I{ASM_SRC_DIR} -o $out -c $in")
         writer.rule("ld", command="$ld $ldflags -o $out $in")
         writer.rule("gbagfx", command="$gbagfx $in $out")
         writer.rule("patchbin", command=f"$patchbin $in $out")
