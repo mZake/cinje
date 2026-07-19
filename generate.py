@@ -31,6 +31,7 @@ GBAGFX   = f"{TOOLS_DIR}/gbagfx/gbagfx"
 MID2AGB  = f"{TOOLS_DIR}/mid2agb/mid2agb"
 PATCHBIN = f"{PATCH_DIR}/patchbin"
 PREPROC  = f"{TOOLS_DIR}/preproc/preproc"
+SCANINC  = f"{TOOLS_DIR}/scaninc/scaninc"
 WAV2AGB  = f"{TOOLS_DIR}/wav2agb/wav2agb"
 
 ADDRESS_TO_INSERT = OFFSET_TO_INSERT + 0x8000000
@@ -190,6 +191,9 @@ def main():
     patch_sources = collect_files(PATCH_DIR, ".cpp")
     patch_headers = collect_files(PATCH_DIR, ".hpp")
 
+    c_depfiles = derive_files(c_inputs, f"{C_BUILD_DIR}/%.o.d")
+    asm_depfiles = derive_files(asm_inputs, f"{ASM_BUILD_DIR}/%.o.d")
+
     with open(f"{PATCH_DIR}/build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
 
@@ -209,16 +213,20 @@ def main():
         writer = Writer(stream)
 
         writer.variable("cc", "arm-none-eabi-gcc")
+        writer.variable("as", "arm-none-eabi-as")
         writer.variable("ld", "arm-none-eabi-ld")
         writer.newline()
         writer.variable("gbagfx",   GBAGFX)
         writer.variable("mid2agb",  MID2AGB)
         writer.variable("patchbin", PATCHBIN)
         writer.variable("preproc",  PREPROC)
+        writer.variable("scaninc",  SCANINC)
         writer.variable("wav2agb",  WAV2AGB)
         writer.newline()
         writer.variable("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
+        writer.variable("asflags", f"-mthumb -mthumb-interwork -march=armv4t -mcpu=arm7tdmi -meabi=gnu -I {ASM_SRC_DIR}")
         writer.variable("ldflags", f"-T linker.ld BPRE.ld -r --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
+        writer.variable("cppflags", f"-I {INC_DIR}")
         writer.newline()
 
         writer.pool("ninja_pool", depth=1)
@@ -227,16 +235,18 @@ def main():
                     command="ninja -C $in",
                     pool="ninja_pool")
 
-        writer.rule("cc", command=f"$cc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | $preproc -i $in charmap.txt | $cc $cflags -xc -o $out -c -", depfile="$out.d")
-        writer.rule("as", command=f"$cc $cflags -I{ASM_SRC_DIR} -o $out -c $in")
+        writer.rule("cc", command="$cc -E $cppflags $in | $preproc -i $in charmap.txt | $cc $cflags -xc -o $out -c -", depfile="$out.d")
+        writer.rule("as", command="$as $asflags -c $in -o $out", depfile="$out.d")
         writer.rule("ld", command="$ld $ldflags -o $out $in")
         writer.rule("gbagfx", command="$gbagfx $in $out")
         writer.rule("patchbin", command=f"$patchbin $in $out")
+        writer.rule("scaninc", command=f"$scaninc -M $out -I {INC_DIR} -I {ASM_SRC_DIR} $in")
 
         writer.build("ninja", f"{TOOLS_DIR}/gbagfx",  "$gbagfx")
         writer.build("ninja", f"{TOOLS_DIR}/mid2agb", "$mid2agb")
         writer.build("ninja", PATCH_DIR,              "$patchbin")
         writer.build("ninja", f"{TOOLS_DIR}/preproc", "$preproc")
+        writer.build("ninja", f"{TOOLS_DIR}/scaninc", "$scaninc")
         writer.build("ninja", f"{TOOLS_DIR}/wav2agb", "$wav2agb")
         writer.newline()
 
@@ -250,6 +260,9 @@ def main():
 
         writer.build_group("cc", c_sources, c_objects, order_only="$preproc")
         writer.build_group("as", asm_sources, asm_objects)
+
+        writer.build_group("scaninc", c_sources, c_depfiles, order_only="$scaninc")
+        writer.build_group("scaninc", asm_sources, asm_depfiles, order_only="$scaninc")
 
         if all_objects:
             writer.build("ld", all_objects, BLOB_OBJECT)

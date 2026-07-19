@@ -1,0 +1,8 @@
+cxx = g++
+
+cxxflags = -Wall -Werror -std=c++11 -O2
+
+rule cxx
+  command = $cxx $cxxflags $in -o $out
+
+build scaninc: cxx scaninc.cpp c_file.cpp asm_file.cpp source_file.cpp | scaninc.h asm_file.h c_file.h source_file.h
