@@ -66,12 +66,16 @@ class Writer:
         outputs: str | list[str],
         implicit_inputs: str | list[str] | None = None,
         implicit_outputs: str | list[str] | None = None,
+        order_only: str | list[str] | None = None,
         **kwargs,
     ):
         all_inputs = as_list(inputs)
         if implicit_inputs is not None:
             all_inputs.append("|")
             all_inputs.extend(as_list(implicit_inputs))
+        if order_only is not None:
+            all_inputs.append("||")
+            all_inputs.extend(as_list(order_only))
 
         all_outputs = as_list(outputs)
         if implicit_outputs is not None:
@@ -92,12 +96,13 @@ class Writer:
         outputs: list[str],
         implicit_inputs: str | list[str] | None = None,
         implicit_outputs: str | list[str] | None = None,
+        order_only: str | list[str] | None = None,
         **kwargs,
     ):
         if not (inputs and outputs):
             return
         for input, output in zip(inputs, outputs):
-            self.build(rule, input, output, implicit_inputs, implicit_outputs, **kwargs)
+            self.build(rule, input, output, implicit_inputs, implicit_outputs, order_only, **kwargs)
         self.newline()
 
     def _line(self, text: str, indent: int = 0):
@@ -235,19 +240,19 @@ def main():
         writer.build("ninja", f"{TOOLS_DIR}/wav2agb", "$wav2agb")
         writer.newline()
 
-        writer.build_group("gbagfx", png_files, bpp1_files, implicit_inputs="$gbagfx")
-        writer.build_group("gbagfx", png_files, bpp4_files, implicit_inputs="$gbagfx")
-        writer.build_group("gbagfx", png_files, bpp8_files, implicit_inputs="$gbagfx")
+        writer.build_group("gbagfx", png_files, bpp1_files, order_only="$gbagfx")
+        writer.build_group("gbagfx", png_files, bpp4_files, order_only="$gbagfx")
+        writer.build_group("gbagfx", png_files, bpp8_files, order_only="$gbagfx")
 
-        writer.build_group("gbagfx", bpp1_files, bpp1_lz_files, implicit_inputs="$gbagfx")
-        writer.build_group("gbagfx", bpp4_files, bpp4_lz_files, implicit_inputs="$gbagfx")
-        writer.build_group("gbagfx", bpp8_files, bpp8_lz_files, implicit_inputs="$gbagfx")
+        writer.build_group("gbagfx", bpp1_files, bpp1_lz_files, order_only="$gbagfx")
+        writer.build_group("gbagfx", bpp4_files, bpp4_lz_files, order_only="$gbagfx")
+        writer.build_group("gbagfx", bpp8_files, bpp8_lz_files, order_only="$gbagfx")
 
-        writer.build_group("cc", c_sources, c_objects, implicit_inputs="$preproc")
+        writer.build_group("cc", c_sources, c_objects, order_only="$preproc")
         writer.build_group("as", asm_sources, asm_objects)
 
         if all_objects:
             writer.build("ld", all_objects, BLOB_OBJECT)
-            writer.build("patchbin", [BASE_ROM_FILE, BLOB_OBJECT, "|", PATCHBIN], OUT_ROM_FILE)
+            writer.build("patchbin", [BASE_ROM_FILE, BLOB_OBJECT], OUT_ROM_FILE, order_only="$patchbin")
 
 if __name__ == "__main__": main()
