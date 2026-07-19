@@ -182,33 +182,26 @@ def main():
 
     # Patches are compiled for the host machine. They are getting placed
     # here to avoid ambiguity.    
-    patch_inputs = collect_files(PATCH_DIR, ".cpp")
-    patch_sources = derive_files(patch_inputs, f"{PATCH_DIR}/%.cpp")
-    patch_objects = derive_files(patch_inputs, f"{C_BUILD_DIR}/%.o")
+    patch_sources = collect_files(PATCH_DIR, ".cpp")
+    patch_headers = collect_files(PATCH_DIR, ".hpp")
 
-    with open("build.ninja", "w", encoding="utf-8") as stream:
+    with open(f"{PATCH_DIR}/build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
 
-        writer.pool("ninja_pool", depth=1)
-
-        writer.rule("ninja",
-                    command="ninja -C $in",
-                    pool="ninja_pool")
-
-        writer.variable("host_cxx", "g++")
+        writer.variable("cxx", "g++")
         writer.newline()
-
         writer.variable("cxxflags", f"-std=c++17 -O2 -Wall -Wextra -I{INC_DIR}")
         writer.newline()
 
-        writer.rule("host_cxx", command="$host_cxx $cxxflags -MMD -MF $out.d -MT $out -o $out -c $in", depfile="$out.d")
-        writer.rule("host_ld", command="$host_cxx -o $out $in")
+        writer.rule("cxx", command="$cxx $cxxflags $in -o $out")
 
-        writer.build_group("host_cxx", patch_sources, patch_objects)
+        writer.build("cxx",
+                     inputs=patch_sources,
+                     implicit_inputs=patch_headers,
+                     outputs="patchbin")
 
-        if patch_objects:
-            writer.build("host_ld", patch_objects, PATCHBIN)
-            writer.newline()
+    with open("build.ninja", "w", encoding="utf-8") as stream:
+        writer = Writer(stream)
 
         writer.variable("cc", "arm-none-eabi-gcc")
         writer.variable("ld", "arm-none-eabi-ld")
@@ -223,6 +216,12 @@ def main():
         writer.variable("ldflags", f"-T linker.ld BPRE.ld -r --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
         writer.newline()
 
+        writer.pool("ninja_pool", depth=1)
+
+        writer.rule("ninja",
+                    command="ninja -C $in",
+                    pool="ninja_pool")
+
         writer.rule("cc", command=f"$cc -E -I{INC_DIR} -MMD -MF $out.d -MT $out $in | $preproc -i $in charmap.txt | $cc $cflags -xc -o $out -c -", depfile="$out.d")
         writer.rule("as", command=f"$cc $cflags -I{ASM_SRC_DIR} -o $out -c $in")
         writer.rule("ld", command="$ld $ldflags -o $out $in")
@@ -231,6 +230,7 @@ def main():
 
         writer.build("ninja", f"{TOOLS_DIR}/gbagfx",  "$gbagfx")
         writer.build("ninja", f"{TOOLS_DIR}/mid2agb", "$mid2agb")
+        writer.build("ninja", PATCH_DIR,              "$patchbin")
         writer.build("ninja", f"{TOOLS_DIR}/preproc", "$preproc")
         writer.build("ninja", f"{TOOLS_DIR}/wav2agb", "$wav2agb")
         writer.newline()

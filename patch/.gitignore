@@ -1,3 +1,6 @@
 # Executables
 patchbin
 patchbin.exe
+
+# Ninja
+build.ninja
