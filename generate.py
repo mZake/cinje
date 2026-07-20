@@ -221,14 +221,39 @@ def main():
         writer.variable("cppflags", f"-I {INC_DIR}")
         writer.newline()
 
-        writer.rule("cc", command="$cc -E $cppflags $in | $preproc -i $in charmap.txt | $cc $cflags -xc -o $out -c -", depfile="$out.d")
-        writer.rule("as", command="$as $asflags -c $in -o $out", depfile="$out.d")
-        writer.rule("ld", command="$ld $ldflags -o $out $in")
-        writer.rule("host_cc", command="$cc $cflags $in -o $out")
-        writer.rule("host_cxx", command="$cxx $cxxflags $in -o $out")
-        writer.rule("gbagfx", command="$gbagfx $in $out")
-        writer.rule("patchbin", command=f"$patchbin $in $out")
-        writer.rule("scaninc", command=f"$scaninc -M $out -I {INC_DIR} -I {ASM_DIR} $in")
+        writer.rule("cc",
+                    command="$cc -E $cppflags $in | $preproc -i $in charmap.txt | $cc $cflags -xc -o $out -c -",
+                    depfile="$out.d",
+                    description="Building C object $out")
+
+        writer.rule("as",
+                    command="$as $asflags -c $in -o $out",
+                    depfile="$out.d",
+                    description="Building ASM object $out")
+
+        writer.rule("ld",
+                    command="$ld $ldflags -o $out $in",
+                    description="Linking ELF object $out")
+
+        writer.rule("host_cc",
+                    command="$cc $cflags $in -o $out",
+                    description="Building C executable $out")
+
+        writer.rule("host_cxx",
+                    command="$cxx $cxxflags $in -o $out",
+                    description="Building C++ executable $out")
+
+        writer.rule("gbagfx",
+                    command="$gbagfx $in $out",
+                    description="Building graphics $out")
+
+        writer.rule("patchbin",
+                    command="$patchbin $in $out",
+                    description="Patching $out")
+
+        writer.rule("scaninc",
+                    command=f"$scaninc -M $out -I {INC_DIR} -I {ASM_DIR} $in",
+                    description="Building depfile $out")
 
         writer.subninja(f"{TOOLS_DIR}/gbagfx/build.ninja")
         writer.subninja(f"{TOOLS_DIR}/mid2agb/build.ninja")
