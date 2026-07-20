@@ -1,6 +1,5 @@
+cxx = g++
+
 cxxflags = -std=c++11 -O2 -Wall -Wno-switch -Werror
 
-rule cxx
-  command = g++ $cxxflags $in -o $out
-
-build preproc: cxx asm_file.cpp c_file.cpp charmap.cpp preproc.cpp string_parser.cpp utf8.cpp io.cpp | asm_file.h c_file.h char_util.h charmap.h preproc.h string_parser.h utf8.h io.h
+build tools/preproc/preproc: host_cxx tools/preproc/asm_file.cpp tools/preproc/c_file.cpp tools/preproc/charmap.cpp tools/preproc/preproc.cpp tools/preproc/string_parser.cpp tools/preproc/utf8.cpp tools/preproc/io.cpp | tools/preproc/asm_file.h tools/preproc/c_file.h tools/preproc/char_util.h tools/preproc/charmap.h tools/preproc/preproc.h tools/preproc/string_parser.h tools/preproc/utf8.h tools/preproc/io.h

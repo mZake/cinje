@@ -1,6 +1,5 @@
+cxx = g++
+
 cxxflags = -std=c++11 -O2 -Wall -Wno-switch -Werror
 
-rule cxx
-  command = g++ $cxxflags $in -o $out
-
-build mid2agb: cxx agb.cpp error.cpp main.cpp midi.cpp tables.cpp | agb.h error.h main.h tables.h
+build tools/mid2agb/mid2agb: host_cxx tools/mid2agb/agb.cpp tools/mid2agb/error.cpp tools/mid2agb/main.cpp tools/mid2agb/midi.cpp tools/mid2agb/tables.cpp | tools/mid2agb/agb.h tools/mid2agb/error.h tools/mid2agb/main.h tools/mid2agb/tables.h

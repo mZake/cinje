@@ -1,6 +1,5 @@
+cxx = g++
+
 cxxflags = -Wall -Werror -std=c++17 -O2
 
-rule cxx
-  command = g++ $cxxflags $in -o $out
-
-build wav2agb: cxx converter.cpp wav2agb.cpp wav_file.cpp | converter.h wav_file.h
+build tools/wav2agb/wav2agb: host_cxx tools/wav2agb/converter.cpp tools/wav2agb/wav2agb.cpp tools/wav2agb/wav_file.cpp | tools/wav2agb/converter.h tools/wav2agb/wav_file.h
