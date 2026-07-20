@@ -591,7 +591,7 @@ inline void apply_patches(const char* input, const char* output, const std::vect
     if (!fs::copy_file(input, output, fs::copy_options::overwrite_existing, ec))
         log_fatal("cannot perform copy operation: from %s to %s", input, output);
 
-    std::FILE* stream = std::fopen(output, "w+b");
+    std::FILE* stream = std::fopen(output, "r+b");
     if (!stream)
         log_fatal("cannot open file: %s", output);
 
