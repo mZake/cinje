@@ -130,6 +130,68 @@ private:
     const uint8_t* m_buffer_current = nullptr;
 };
 
+struct BufferBuilder
+{
+    std::vector<uint8_t> buffer;
+
+    void write_bytes(uint8_t byte);
+    void write_bytes(std::initializer_list<uint8_t> bytes);
+
+    void write_uint16(uint16_t value);
+    void write_uint32(uint32_t value);
+    void write_uint64(uint64_t value);
+
+    void write_little_uint16(uint16_t value);
+    void write_little_uint32(uint32_t value);
+    void write_little_uint64(uint64_t value);
+};
+
+inline void BufferBuilder::write_bytes(uint8_t byte)
+{
+    buffer.push_back(byte);
+}
+
+inline void BufferBuilder::write_bytes(std::initializer_list<uint8_t> bytes)
+{
+    buffer.insert(buffer.end(), bytes);
+}
+
+inline void BufferBuilder::write_uint16(uint16_t value)
+{
+    auto data_begin = reinterpret_cast<uint8_t*>(&value);
+    auto data_end = data_begin + sizeof(uint16_t);
+    buffer.insert(buffer.end(), data_begin, data_end);
+}
+
+inline void BufferBuilder::write_uint32(uint32_t value)
+{
+    auto data_begin = reinterpret_cast<uint8_t*>(&value);
+    auto data_end = data_begin + sizeof(uint32_t);
+    buffer.insert(buffer.end(), data_begin, data_end);
+}
+
+inline void BufferBuilder::write_uint64(uint64_t value)
+{
+    auto data_begin = reinterpret_cast<uint8_t*>(&value);
+    auto data_end = data_begin + sizeof(uint64_t);
+    buffer.insert(buffer.end(), data_begin, data_end);
+}
+
+inline void BufferBuilder::write_little_uint16(uint16_t value)
+{
+    write_uint16(HOST_TO_LITTLE16(value));
+}
+
+inline void BufferBuilder::write_little_uint32(uint32_t value)
+{
+    write_uint32(HOST_TO_LITTLE32(value));
+}
+
+inline void BufferBuilder::write_little_uint64(uint64_t value)
+{
+    write_uint64(HOST_TO_LITTLE64(value));
+}
+
 inline void log_fatal(const char* format, ...)
 {
     std::va_list args;
@@ -467,33 +529,6 @@ inline std::unordered_map<std::string, uint32_t> elf_get_symbol_table(const ELFD
     return symbol_table;
 }
 
-template<typename T>
-void bytes_push(std::vector<uint8_t>& bytes, T object)
-{
-    auto data_begin = reinterpret_cast<uint8_t*>(&object);
-    auto data_end = data_begin + sizeof(T);
-    bytes.insert(bytes.end(), data_begin, data_end);
-}
-
-inline void bytes_push_little(std::vector<uint8_t>& bytes, uint16_t value)
-{
-    value = HOST_TO_LITTLE16(value);
-    bytes_push(bytes, value);
-}
-
-inline void bytes_push_little(std::vector<uint8_t>& bytes, uint32_t value)
-{
-    value = HOST_TO_LITTLE32(value);
-    bytes_push(bytes, value);
-}
-
-inline void bytes_push_list(std::vector<uint8_t>& bytes, std::initializer_list<uint8_t> list)
-{
-    bytes.insert(bytes.end(), list);
-}
-
-/////////////////////////
-
 struct Patch
 {
     std::vector<uint8_t> bytes;
@@ -539,13 +574,13 @@ public:
         uint32_t address = require_symbol(sym_table, m_symbol);
         address = m_set_thumb_bit ? (address | 1) : (address & ~1);
 
-        std::vector<uint8_t> bytes;
-        bytes.reserve(RepointSize);
-        bytes_push_little(bytes, address);
+        BufferBuilder builder;
+        builder.buffer.reserve(RepointSize);
+        builder.write_little_uint32(address);
 
         Patch patch;
         patch.offset = m_offset;
-        patch.bytes = std::move(bytes);
+        patch.bytes = std::move(builder.buffer);
         return patch;
     }
 
@@ -588,26 +623,25 @@ public:
     {
         uint8_t register_bits = m_register_id & 7;
 
-        std::vector<uint8_t> bytes;
-        bytes.reserve(HookSize);
+        BufferBuilder builder;
+        builder.buffer.reserve(HookSize);
 
         uint32_t address = require_symbol(sym_table, m_symbol);
         if (address % 4) {
-            bytes_push<uint8_t>(bytes, 0x01);
-            bytes_push<uint8_t>(bytes, 0x48 | register_bits);
-            bytes_push<uint8_t>(bytes, 0x00 | (register_bits << 3));
-            bytes_push_list(bytes, {0x47, 0x00, 0x00});
+            builder.write_bytes(0x01);
+            builder.write_bytes(0x48 | register_bits);
+            builder.write_bytes(0x00 | (register_bits << 3));
+            builder.write_bytes({0x47, 0x00, 0x00});
         } else {
-            bytes_push<uint8_t>(bytes, 0x00);
-            bytes_push<uint8_t>(bytes, 0x48 | register_bits);
-            bytes_push<uint8_t>(bytes, 0x00 | (register_bits << 3));
-            bytes_push<uint8_t>(bytes, 0x47);
+            builder.write_bytes(0x00);
+            builder.write_bytes(0x48 | register_bits);
+            builder.write_bytes(0x00 | (register_bits << 3));
+            builder.write_bytes(0x47);
         }
-
-        bytes_push_little(bytes, address | 1);
+        builder.write_little_uint32(address | 1);
 
         Patch patch;
-        patch.bytes = std::move(bytes);
+        patch.bytes = std::move(builder.buffer);
         patch.offset = m_offset & ~1; // Ensure offset alignment is 2
         return patch;
     }
