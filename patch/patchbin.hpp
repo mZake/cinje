@@ -48,81 +48,27 @@
 
 namespace fs = std::filesystem;
 
-class BufferReader
+class BufferParser
 {
 public:
-    BufferReader(const uint8_t* begin, const uint8_t* end)
+    BufferParser(const uint8_t* begin, const uint8_t* end)
         : m_buffer_begin(begin), m_buffer_end(end), m_buffer_current(begin) {}
 
-    BufferReader(const uint8_t* begin, size_t length)
+    BufferParser(const uint8_t* begin, size_t length)
         : m_buffer_begin(begin), m_buffer_end(begin + length), m_buffer_current(begin) {}
 
-    template<typename T>
-    bool read_object(T& output)
-    {
-        if (m_buffer_current >= m_buffer_end)
-            return false;
+    bool read_bytes(uint8_t* output, size_t count);
+    bool read_byte(uint8_t& output);
 
-        auto final_pointer = m_buffer_current + sizeof(T);
-        if (final_pointer >= m_buffer_end)
-            return false;
+    bool read_uint16(uint16_t& output);
+    bool read_uint32(uint32_t& output);
+    bool read_uint64(uint64_t& output);
 
-        auto object = reinterpret_cast<const T*>(m_buffer_current);
-        output = *object;
-        m_buffer_current += sizeof(T);
+    bool read_little_uint16(uint16_t& output);
+    bool read_little_uint32(uint32_t& output);
+    bool read_little_uint64(uint64_t& output);
 
-        return true;
-    }
-
-    template<typename T>
-    bool read_array(T* output, size_t count)
-    {
-        if (m_buffer_current >= m_buffer_end)
-            return false;
-
-        auto final_pointer = m_buffer_current + sizeof(T) * count;
-        if (final_pointer >= m_buffer_end)
-            return false;
-
-        auto array = reinterpret_cast<const T*>(m_buffer_current);
-        for (size_t i = 0; i < count; ++i) {
-            output[i] = array[i];
-            m_buffer_current += sizeof(T);
-        }
-
-        return true;
-    }
-
-    bool read_little_int(uint16_t& output)
-    {
-        bool result = read_object(output);
-        output = LITTLE_TO_HOST16(output);
-        return result;
-    }
-
-    bool read_little_int(uint32_t& output)
-    {
-        bool result = read_object(output);
-        output = LITTLE_TO_HOST32(output);
-        return result;
-    }
-
-    bool read_little_int(uint64_t& output)
-    {
-        bool result = read_object(output);
-        output = LITTLE_TO_HOST64(output);
-        return result;
-    }
-
-    bool seek(size_t offset)
-    {
-        auto final_pointer = m_buffer_begin + offset;
-        if (final_pointer >= m_buffer_end)
-            return false;
-
-        m_buffer_current = final_pointer;
-        return true;
-    }
+    bool seek(size_t offset);
 
 private:
     const uint8_t* m_buffer_begin = nullptr;
@@ -145,6 +91,82 @@ struct BufferBuilder
     void write_little_uint32(uint32_t value);
     void write_little_uint64(uint64_t value);
 };
+
+inline bool BufferParser::read_bytes(uint8_t* output, size_t count)
+{
+    if (m_buffer_current >= m_buffer_end)
+        return false;
+
+    auto next_current = m_buffer_current + count;
+    if (next_current >= m_buffer_end)
+        return false;
+
+    auto bytes = reinterpret_cast<const uint8_t*>(m_buffer_current);
+    std::memcpy(output, bytes, count);
+    m_buffer_current = next_current;
+
+    return true;
+}
+
+inline bool BufferParser::read_byte(uint8_t& output)
+{
+    return read_bytes(&output, sizeof(uint8_t));
+}
+
+inline bool BufferParser::read_uint16(uint16_t& output)
+{
+    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint16_t));
+}
+
+inline bool BufferParser::read_uint32(uint32_t& output)
+{
+    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint32_t));
+}
+
+inline bool BufferParser::read_uint64(uint64_t& output)
+{
+    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint64_t));
+}
+
+inline bool BufferParser::read_little_uint16(uint16_t& output)
+{
+    if (read_uint16(output)) {
+        output = LITTLE_TO_HOST16(output);
+        return true;
+    }
+
+    return false;
+}
+
+inline bool BufferParser::read_little_uint32(uint32_t& output)
+{
+    if (read_uint32(output)) {
+        output = LITTLE_TO_HOST32(output);
+        return true;
+    }
+
+    return false;
+}
+
+inline bool BufferParser::read_little_uint64(uint64_t& output)
+{
+    if (read_uint64(output)) {
+        output = LITTLE_TO_HOST64(output);
+        return true;
+    }
+
+    return false;
+}
+
+inline bool BufferParser::seek(size_t offset)
+{
+    auto next_current = m_buffer_begin + offset;
+    if (next_current >= m_buffer_end)
+        return false;
+
+    m_buffer_current = next_current;
+    return true;
+}
 
 inline void BufferBuilder::write_bytes(uint8_t byte)
 {
@@ -364,11 +386,12 @@ inline std::vector<uint8_t> read_entire_file(const char* filepath)
 
 inline ELFData elf_from_file(const char* filepath)
 {
-    auto buffer = read_entire_file(filepath);
-    BufferReader reader{buffer.data(), buffer.size()};
     ELFData elf;
 
-    reader.read_array(elf.header.e_ident, EI_NIDENT);
+    std::vector<uint8_t> buffer = read_entire_file(filepath);
+    BufferParser parser(buffer.data(), buffer.size());
+
+    parser.read_bytes(elf.header.e_ident, EI_NIDENT);
     if (elf.header.e_ident[EI_MAG0] != ELFMAG0 || elf.header.e_ident[EI_MAG1] != ELFMAG1 ||
         elf.header.e_ident[EI_MAG2] != ELFMAG2 || elf.header.e_ident[EI_MAG3] != ELFMAG3)
         log_fatal("file is not an ELF object: %s", filepath);
@@ -382,19 +405,19 @@ inline ELFData elf_from_file(const char* filepath)
     if (elf.header.e_ident[EI_VERSION] != EV_CURRENT)
         log_fatal("ELF version is invalid: %s", filepath);
 
-    reader.read_little_int(elf.header.e_type);
-    reader.read_little_int(elf.header.e_machine);
-    reader.read_little_int(elf.header.e_version);
-    reader.read_little_int(elf.header.e_entry);
-    reader.read_little_int(elf.header.e_phoff);
-    reader.read_little_int(elf.header.e_shoff);
-    reader.read_little_int(elf.header.e_flags);
-    reader.read_little_int(elf.header.e_ehsize);
-    reader.read_little_int(elf.header.e_phentsize);
-    reader.read_little_int(elf.header.e_phnum);
-    reader.read_little_int(elf.header.e_shentsize);
-    reader.read_little_int(elf.header.e_shnum);
-    reader.read_little_int(elf.header.e_shstrndx);
+    parser.read_little_uint16(elf.header.e_type);
+    parser.read_little_uint16(elf.header.e_machine);
+    parser.read_little_uint32(elf.header.e_version);
+    parser.read_little_uint32(elf.header.e_entry);
+    parser.read_little_uint32(elf.header.e_phoff);
+    parser.read_little_uint32(elf.header.e_shoff);
+    parser.read_little_uint32(elf.header.e_flags);
+    parser.read_little_uint16(elf.header.e_ehsize);
+    parser.read_little_uint16(elf.header.e_phentsize);
+    parser.read_little_uint16(elf.header.e_phnum);
+    parser.read_little_uint16(elf.header.e_shentsize);
+    parser.read_little_uint16(elf.header.e_shnum);
+    parser.read_little_uint16(elf.header.e_shstrndx);
 
     if (elf.header.e_type != ET_REL)
         log_fatal("ELF is not a relocatable object: %s", filepath);
@@ -403,18 +426,18 @@ inline ELFData elf_from_file(const char* filepath)
         log_fatal("ELF does not contain a section header table: %s", filepath);
 
     elf.sections.resize(elf.header.e_shnum);
-    reader.seek(elf.header.e_shoff);
+    parser.seek(elf.header.e_shoff);
     for (auto& section : elf.sections) {
-        reader.read_little_int(section.sh_name);
-        reader.read_little_int(section.sh_type);
-        reader.read_little_int(section.sh_flags);
-        reader.read_little_int(section.sh_addr);
-        reader.read_little_int(section.sh_offset);
-        reader.read_little_int(section.sh_size);
-        reader.read_little_int(section.sh_link);
-        reader.read_little_int(section.sh_info);
-        reader.read_little_int(section.sh_addralign);
-        reader.read_little_int(section.sh_entsize);
+        parser.read_little_uint32(section.sh_name);
+        parser.read_little_uint32(section.sh_type);
+        parser.read_little_uint32(section.sh_flags);
+        parser.read_little_uint32(section.sh_addr);
+        parser.read_little_uint32(section.sh_offset);
+        parser.read_little_uint32(section.sh_size);
+        parser.read_little_uint32(section.sh_link);
+        parser.read_little_uint32(section.sh_info);
+        parser.read_little_uint32(section.sh_addralign);
+        parser.read_little_uint32(section.sh_entsize);
     }
 
     size_t symtab_index = 0;
@@ -430,14 +453,14 @@ inline ELFData elf_from_file(const char* filepath)
     size_t symtab_count = symtab_section.sh_size / symtab_section.sh_entsize;
 
     elf.symbols.resize(symtab_count);
-    reader.seek(symtab_section.sh_offset);
+    parser.seek(symtab_section.sh_offset);
     for (auto& symbol : elf.symbols) {
-        reader.read_little_int(symbol.st_name);
-        reader.read_little_int(symbol.st_value);
-        reader.read_little_int(symbol.st_size);
-        reader.read_object(symbol.st_info);
-        reader.read_object(symbol.st_other);
-        reader.read_little_int(symbol.st_shndx);
+        parser.read_little_uint32(symbol.st_name);
+        parser.read_little_uint32(symbol.st_value);
+        parser.read_little_uint32(symbol.st_size);
+        parser.read_byte(symbol.st_info);
+        parser.read_byte(symbol.st_other);
+        parser.read_little_uint16(symbol.st_shndx);
     }
 
     elf.shstrtab_index = elf.header.e_shstrndx;
