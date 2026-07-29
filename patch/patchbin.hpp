@@ -419,8 +419,8 @@ inline ELFData elf_from_file(const char* filepath)
     parser.read_little_uint16(elf.header.e_shnum);
     parser.read_little_uint16(elf.header.e_shstrndx);
 
-    if (elf.header.e_type != ET_REL)
-        log_fatal("ELF is not a relocatable object: %s", filepath);
+    if (elf.header.e_type != ET_EXEC)
+        log_fatal("ELF is not an executable: %s", filepath);
 
     if (elf.header.e_shoff == 0)
         log_fatal("ELF does not contain a section header table: %s", filepath);

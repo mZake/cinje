@@ -217,7 +217,7 @@ def main():
         writer.newline()
         writer.variable("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
         writer.variable("asflags", f"-mthumb -mthumb-interwork -march=armv4t -mcpu=arm7tdmi -meabi=gnu -I {ASM_DIR}")
-        writer.variable("ldflags", f"-T linker.ld BPRE.ld -r --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
+        writer.variable("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
         writer.variable("cppflags", f"-I {INC_DIR}")
         writer.newline()
 
