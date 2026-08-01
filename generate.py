@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from io import BufferedWriter
+from typing import List, Optional, Union
 
 # Change this if needed
 OFFSET_TO_INSERT = 0x1400000
@@ -65,20 +66,20 @@ class Writer:
     def build(
         self,
         rule: str,
-        inputs: str | list[str],
-        outputs: str | list[str],
-        implicit_inputs: str | list[str] | None = None,
-        implicit_outputs: str | list[str] | None = None,
-        order_only: str | list[str] | None = None,
+        inputs: Union[List[str], str],
+        outputs: Union[List[str], str],
+        implicit_inputs: Optional[Union[List[str], str]] = None,
+        implicit_outputs: Optional[Union[List[str], str]] = None,
+        order_only_deps: Optional[Union[List[str], str]] = None,
         **kwargs,
     ):
         all_inputs = as_list(inputs)
         if implicit_inputs is not None:
             all_inputs.append("|")
             all_inputs.extend(as_list(implicit_inputs))
-        if order_only is not None:
+        if order_only_deps is not None:
             all_inputs.append("||")
-            all_inputs.extend(as_list(order_only))
+            all_inputs.extend(as_list(order_only_deps))
 
         all_outputs = as_list(outputs)
         if implicit_outputs is not None:
@@ -95,17 +96,18 @@ class Writer:
     def build_group(
         self,
         rule: str,
-        inputs: list[str],
-        outputs: list[str],
-        implicit_inputs: str | list[str] | None = None,
-        implicit_outputs: str | list[str] | None = None,
-        order_only: str | list[str] | None = None,
+        inputs: List[str],
+        outputs: List[str],
+        implicit_inputs: Optional[Union[List[str], str]] = None,
+        implicit_outputs: Optional[Union[List[str], str]] = None,
+        order_only_deps: Optional[Union[List[str], str]] = None,
         **kwargs,
     ):
         if not (inputs and outputs):
             return
         for input, output in zip(inputs, outputs):
-            self.build(rule, input, output, implicit_inputs, implicit_outputs, order_only, **kwargs)
+            self.build(rule, input, output, implicit_inputs, implicit_outputs,
+                       order_only_deps, **kwargs)
         self.newline()
 
     def _line(self, text: str, indent: int = 0):
@@ -113,7 +115,7 @@ class Writer:
         length = len(stripped) + indent
         self.stream.write(f"{stripped:>{length}}\n")
 
-def as_list(input: str | list[str] | None) -> list[str]:
+def as_list(input: Optional[Union[List[str], str]]) -> List[str]:
     if input is None:
         return []
     if isinstance(input, list):
@@ -144,11 +146,11 @@ def configure_toolchain():
 
     os.symlink(toolchain_path, symlink_path, target_is_directory=True)
 
-def collect_files(directory: str, extension: str) -> list[str]:
+def collect_files(directory: str, extension: str) -> List[str]:
     matches = glob.glob(f"{directory}/**/*{extension}", recursive=True)
     return matches
 
-def derive_files(inputs: str | list[str], pattern: str) -> list[str]:
+def derive_files(inputs: Union[List[str], str], pattern: str) -> List[str]:
     outputs = list()
     for input in as_list(inputs):
         stem = os.path.splitext(input)[0]
