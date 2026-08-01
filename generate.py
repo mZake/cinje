@@ -177,6 +177,7 @@ def main():
         writer.variable("cxx", "g++")
         writer.newline()
         writer.variable("cxxflags", f"-std=c++17 -O2 -Wall -Wextra -I{INC_DIR}")
+        writer.variable("ldflags", "")
         writer.newline()
 
         writer.build("host_cxx",
@@ -219,11 +220,11 @@ def main():
                     description="Linking ELF object $out")
 
         writer.rule("host_cc",
-                    command="$cc $cflags $in -o $out",
+                    command="$cc $cflags $in $ldflags -o $out",
                     description="Building C executable $out")
 
         writer.rule("host_cxx",
-                    command="$cxx $cxxflags $in -o $out",
+                    command="$cxx $cxxflags $in $ldflags -o $out",
                     description="Building C++ executable $out")
 
         writer.rule("gbagfx",
