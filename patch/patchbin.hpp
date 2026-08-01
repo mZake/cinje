@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -82,6 +83,8 @@ struct BufferBuilder
 
     void write_bytes(uint8_t byte);
     void write_bytes(std::initializer_list<uint8_t> bytes);
+    void write_bytes(const uint8_t* bytes, size_t count);
+    void write_bytes(size_t count, uint8_t value);
 
     void write_uint16(uint16_t value);
     void write_uint32(uint32_t value);
@@ -176,6 +179,16 @@ inline void BufferBuilder::write_bytes(uint8_t byte)
 inline void BufferBuilder::write_bytes(std::initializer_list<uint8_t> bytes)
 {
     buffer.insert(buffer.end(), bytes);
+}
+
+inline void BufferBuilder::write_bytes(const uint8_t* bytes, size_t count)
+{
+    buffer.insert(buffer.end(), bytes, bytes + count);
+}
+
+inline void BufferBuilder::write_bytes(size_t count, uint8_t value)
+{
+    buffer.insert(buffer.end(), count, value);
 }
 
 inline void BufferBuilder::write_uint16(uint16_t value)
@@ -354,17 +367,158 @@ struct Elf32_Sym
     Elf32_Half st_shndx = 0;
 };
 
-struct ELFData
+class Elf32
 {
-    Elf32_Ehdr header;
-    std::vector<Elf32_Shdr> sections;
-    std::vector<Elf32_Sym> symbols;
+public:
+    Elf32(const char* path);
 
-    size_t shstrtab_index = 0;
-    size_t strtab_index = 0;
+    Elf32_Shdr get_section(uint32_t index) const;
+    const char* get_string(const Elf32_Shdr& section, uint32_t index) const;
 
-    std::vector<uint8_t> payload;
+    std::vector<Elf32_Sym> extract_symbols(const Elf32_Shdr& section) const;
+    std::vector<uint8_t> extract_binary() const;
+
+    Elf32_Ehdr header() const { return m_header; }
+    const std::vector<Elf32_Shdr>& sections() const { return m_sections; }
+
+private:
+    Elf32_Ehdr m_header;
+    std::vector<Elf32_Shdr> m_sections;
+    std::vector<uint8_t> m_payload;
 };
+
+std::vector<uint8_t> read_entire_file(const char* filepath);
+
+inline Elf32::Elf32(const char* path)
+{
+    std::vector<uint8_t> payload = read_entire_file(path);
+    BufferParser parser(payload.data(), payload.size());
+
+    parser.read_bytes(m_header.e_ident, EI_NIDENT);
+    if (m_header.e_ident[EI_MAG0] != ELFMAG0 || m_header.e_ident[EI_MAG1] != ELFMAG1 ||
+        m_header.e_ident[EI_MAG2] != ELFMAG2 || m_header.e_ident[EI_MAG3] != ELFMAG3)
+        log_fatal("file is not an ELF object: %s", path);
+
+    if (m_header.e_ident[EI_CLASS] != ELFCLASS32)
+        log_fatal("ELF is not 32-bit: %s", path);
+
+    if (m_header.e_ident[EI_DATA] != ELFDATA2LSB)
+        log_fatal("ELF is not LSB: %s", path);
+
+    if (m_header.e_ident[EI_VERSION] != EV_CURRENT)
+        log_fatal("ELF version is invalid: %s", path);
+
+    parser.read_little_uint16(m_header.e_type);
+    parser.read_little_uint16(m_header.e_machine);
+    parser.read_little_uint32(m_header.e_version);
+    parser.read_little_uint32(m_header.e_entry);
+    parser.read_little_uint32(m_header.e_phoff);
+    parser.read_little_uint32(m_header.e_shoff);
+    parser.read_little_uint32(m_header.e_flags);
+    parser.read_little_uint16(m_header.e_ehsize);
+    parser.read_little_uint16(m_header.e_phentsize);
+    parser.read_little_uint16(m_header.e_phnum);
+    parser.read_little_uint16(m_header.e_shentsize);
+    parser.read_little_uint16(m_header.e_shnum);
+    parser.read_little_uint16(m_header.e_shstrndx);
+
+    if (m_header.e_type != ET_EXEC)
+        log_fatal("ELF is not an executable: %s", path);
+
+    if (m_header.e_shoff == 0)
+        log_fatal("ELF does not contain a section header table: %s", path);
+
+    m_sections.resize(m_header.e_shnum);
+
+    parser.seek(m_header.e_shoff);
+
+    for (auto& section : m_sections) {
+        parser.read_little_uint32(section.sh_name);
+        parser.read_little_uint32(section.sh_type);
+        parser.read_little_uint32(section.sh_flags);
+        parser.read_little_uint32(section.sh_addr);
+        parser.read_little_uint32(section.sh_offset);
+        parser.read_little_uint32(section.sh_size);
+        parser.read_little_uint32(section.sh_link);
+        parser.read_little_uint32(section.sh_info);
+        parser.read_little_uint32(section.sh_addralign);
+        parser.read_little_uint32(section.sh_entsize);
+    }
+
+    m_payload = std::move(payload);
+}
+
+inline Elf32_Shdr Elf32::get_section(uint32_t index) const
+{
+    return m_sections[index];
+}
+
+inline const char* Elf32::get_string(const Elf32_Shdr& section, uint32_t index) const
+{
+    assert(section.sh_type == SHT_STRTAB);
+    auto strings = reinterpret_cast<const char*>(m_payload.data() + section.sh_offset);
+    return strings + index;
+}
+
+inline std::vector<Elf32_Sym> Elf32::extract_symbols(const Elf32_Shdr& section) const
+{
+    assert(section.sh_type == SHT_SYMTAB);
+
+    std::vector<Elf32_Sym> symbols;
+    size_t count = section.sh_size / section.sh_entsize;
+    symbols.resize(count);
+
+    BufferParser parser(m_payload.data(), m_payload.size());
+    parser.seek(section.sh_offset);
+
+    for (auto& symbol : symbols) {
+        parser.read_little_uint32(symbol.st_name);
+        parser.read_little_uint32(symbol.st_value);
+        parser.read_little_uint32(symbol.st_size);
+        parser.read_byte(symbol.st_info);
+        parser.read_byte(symbol.st_other);
+        parser.read_little_uint16(symbol.st_shndx);
+    }
+
+    return symbols;
+}
+
+inline std::vector<uint8_t> Elf32::extract_binary() const
+{
+    // Collect all sections whose type is SHF_ALLOC
+    std::vector<std::pair<Elf32_Shdr, size_t>> alloc_sections;
+    for (size_t index = 0; index < m_sections.size(); ++index) {
+        auto& section = m_sections[index];
+        if (section.sh_flags & SHF_ALLOC)
+            alloc_sections.emplace_back(section, index);
+    }
+
+    // Sort sections by the virtual address (or index if the addresses match) in ascending order
+    std::sort(alloc_sections.begin(), alloc_sections.end(), [&](auto& lhs, auto& rhs) {
+        if (lhs.first.sh_addr == rhs.first.sh_addr)
+            return lhs.second < rhs.second;
+        return lhs.first.sh_addr < rhs.first.sh_addr;
+    });
+
+    BufferBuilder builder;
+    for (const auto& [section, index] : alloc_sections) {
+        // Calculate necessary padding, if it is necessary in the first place
+        uint32_t align = section.sh_addralign;
+        if (align != 0 && builder.buffer.size() % align != 0) {
+            uint32_t padding = align - builder.buffer.size() % align;
+            builder.write_bytes(padding, 0x00);
+        }
+
+        if (section.sh_type == SHT_PROGBITS) {
+            const uint8_t* bytes = m_payload.data() + section.sh_offset;
+            builder.write_bytes(bytes, section.sh_size);
+        } else if (section.sh_type == SHT_NOBITS) {
+            builder.write_bytes(section.sh_size, 0x00);
+        }
+    }
+
+    return builder.buffer;
+}
 
 inline std::vector<uint8_t> read_entire_file(const char* filepath)
 {
@@ -384,152 +538,22 @@ inline std::vector<uint8_t> read_entire_file(const char* filepath)
     return buffer;
 }
 
-inline ELFData elf_from_file(const char* filepath)
-{
-    ELFData elf;
-
-    std::vector<uint8_t> buffer = read_entire_file(filepath);
-    BufferParser parser(buffer.data(), buffer.size());
-
-    parser.read_bytes(elf.header.e_ident, EI_NIDENT);
-    if (elf.header.e_ident[EI_MAG0] != ELFMAG0 || elf.header.e_ident[EI_MAG1] != ELFMAG1 ||
-        elf.header.e_ident[EI_MAG2] != ELFMAG2 || elf.header.e_ident[EI_MAG3] != ELFMAG3)
-        log_fatal("file is not an ELF object: %s", filepath);
-
-    if (elf.header.e_ident[EI_CLASS] != ELFCLASS32)
-        log_fatal("ELF is not 32-bit: %s", filepath);
-
-    if (elf.header.e_ident[EI_DATA] != ELFDATA2LSB)
-        log_fatal("ELF is not LSB: %s", filepath);
-
-    if (elf.header.e_ident[EI_VERSION] != EV_CURRENT)
-        log_fatal("ELF version is invalid: %s", filepath);
-
-    parser.read_little_uint16(elf.header.e_type);
-    parser.read_little_uint16(elf.header.e_machine);
-    parser.read_little_uint32(elf.header.e_version);
-    parser.read_little_uint32(elf.header.e_entry);
-    parser.read_little_uint32(elf.header.e_phoff);
-    parser.read_little_uint32(elf.header.e_shoff);
-    parser.read_little_uint32(elf.header.e_flags);
-    parser.read_little_uint16(elf.header.e_ehsize);
-    parser.read_little_uint16(elf.header.e_phentsize);
-    parser.read_little_uint16(elf.header.e_phnum);
-    parser.read_little_uint16(elf.header.e_shentsize);
-    parser.read_little_uint16(elf.header.e_shnum);
-    parser.read_little_uint16(elf.header.e_shstrndx);
-
-    if (elf.header.e_type != ET_EXEC)
-        log_fatal("ELF is not an executable: %s", filepath);
-
-    if (elf.header.e_shoff == 0)
-        log_fatal("ELF does not contain a section header table: %s", filepath);
-
-    elf.sections.resize(elf.header.e_shnum);
-    parser.seek(elf.header.e_shoff);
-    for (auto& section : elf.sections) {
-        parser.read_little_uint32(section.sh_name);
-        parser.read_little_uint32(section.sh_type);
-        parser.read_little_uint32(section.sh_flags);
-        parser.read_little_uint32(section.sh_addr);
-        parser.read_little_uint32(section.sh_offset);
-        parser.read_little_uint32(section.sh_size);
-        parser.read_little_uint32(section.sh_link);
-        parser.read_little_uint32(section.sh_info);
-        parser.read_little_uint32(section.sh_addralign);
-        parser.read_little_uint32(section.sh_entsize);
-    }
-
-    size_t symtab_index = 0;
-    for (size_t index = 0; index < elf.sections.size(); ++index) {
-        auto& section = elf.sections[index];
-        if (section.sh_type == SHT_SYMTAB) {
-            symtab_index = index;
-            break;
-        }
-    }
-
-    auto& symtab_section = elf.sections[symtab_index];
-    size_t symtab_count = symtab_section.sh_size / symtab_section.sh_entsize;
-
-    elf.symbols.resize(symtab_count);
-    parser.seek(symtab_section.sh_offset);
-    for (auto& symbol : elf.symbols) {
-        parser.read_little_uint32(symbol.st_name);
-        parser.read_little_uint32(symbol.st_value);
-        parser.read_little_uint32(symbol.st_size);
-        parser.read_byte(symbol.st_info);
-        parser.read_byte(symbol.st_other);
-        parser.read_little_uint16(symbol.st_shndx);
-    }
-
-    elf.shstrtab_index = elf.header.e_shstrndx;
-    elf.strtab_index = symtab_section.sh_link;
-    elf.payload = std::move(buffer);
-
-    return elf;
-}
-
-inline std::vector<uint8_t> elf_get_raw_binary(const ELFData& elf)
-{
-    // Collect all sections whose type is SHF_ALLOC
-    std::vector<std::pair<Elf32_Shdr, size_t>> alloc_sections;
-    for (size_t index = 0; index < elf.sections.size(); ++index) {
-        auto& section = elf.sections[index];
-        if (section.sh_flags & SHF_ALLOC)
-            alloc_sections.emplace_back(section, index);
-    }
-
-    // Sort sections by the virtual address (or index if the addresses match) in ascending order
-    std::sort(alloc_sections.begin(), alloc_sections.end(), [&](auto& lhs, auto& rhs) {
-        if (lhs.first.sh_addr == rhs.first.sh_addr)
-            return lhs.second < rhs.second;
-        return lhs.first.sh_addr < rhs.first.sh_addr;
-    });
-
-    std::vector<uint8_t> payload;
-    for (const auto& [section, index] : alloc_sections) {
-        // Calculate necessary padding, if it is necessary in the first place
-        uint32_t align = section.sh_addralign;
-        if (align > 1 && payload.size() % align != 0) {
-            uint32_t padding = align - payload.size() % align;
-            payload.insert(payload.end(), padding, 0);
-        }
-
-        if (section.sh_type == SHT_PROGBITS) {
-            const uint8_t* buffer_begin = elf.payload.data() + section.sh_offset;
-            const uint8_t* buffer_end = buffer_begin + section.sh_size;
-            payload.insert(payload.end(), buffer_begin, buffer_end);
-        } else if (section.sh_type == SHT_NOBITS) {
-            payload.insert(payload.end(), section.sh_size, 0);
-        }
-    }
-
-    return payload;
-}
-
-inline const char* elf_get_section_name(const ELFData& elf, Elf32_Word sh_name)
-{
-    Elf32_Shdr shstrtab_section = elf.sections[elf.shstrtab_index];
-    uint32_t offset = shstrtab_section.sh_offset + sh_name;
-    return reinterpret_cast<const char*>(elf.payload.data() + offset);
-}
-
-inline const char* elf_get_symbol_name(const ELFData& elf, Elf32_Word st_name)
-{
-    Elf32_Shdr strtab_section = elf.sections[elf.strtab_index];
-    uint32_t offset = strtab_section.sh_offset + st_name;
-    return reinterpret_cast<const char*>(elf.payload.data() + offset);
-}
-
 // Return a table that maps symbol names to their final addresses,
 // filtering irrelevant symbols in the process.
-inline std::unordered_map<std::string, uint32_t> elf_get_symbol_table(const ELFData& elf)
+inline std::unordered_map<std::string, uint32_t> elf_get_symbol_table(const Elf32& elf)
 {
     std::unordered_map<std::string, uint32_t> symbol_table;
 
-    for (const auto& symbol : elf.symbols) {
-        int st_type = ELF32_ST_TYPE(symbol.st_info);
+    Elf32_Shdr symtab;
+    for (const auto& section : elf.sections())
+        if (section.sh_type == SHT_SYMTAB)
+            symtab = section;
+
+    Elf32_Shdr strtab = elf.get_section(symtab.sh_link);
+
+    std::vector<Elf32_Sym> symbols = elf.extract_symbols(symtab);
+    for (const auto& symbol : symbols) {
+        uint32_t st_type = ELF32_ST_TYPE(symbol.st_info);
         if (st_type == STT_SECTION || st_type == STT_FILE)
             continue;
 
@@ -541,11 +565,11 @@ inline std::unordered_map<std::string, uint32_t> elf_get_symbol_table(const ELFD
         if (symbol.st_shndx == SHN_ABS) {
             address = symbol.st_value;
         } else {
-            Elf32_Shdr section = elf.sections[symbol.st_shndx];
+            Elf32_Shdr section = elf.get_section(symbol.st_shndx);
             address = section.sh_addr + symbol.st_value;
         }
 
-        std::string name = elf_get_symbol_name(elf, symbol.st_name);
+        std::string name = elf.get_string(strtab, symbol.st_name);
         symbol_table[name] = address;
     }
 
@@ -691,12 +715,12 @@ inline uint32_t to_offset(uint32_t address)
     return address - 0x8000000;
 }
 
-inline std::vector<Patch> generate_patches(const ELFData& elf, const CommandList& cmds)
+inline std::vector<Patch> generate_patches(const Elf32& elf, const CommandList& cmds)
 {
     auto sym_table = elf_get_symbol_table(elf);
 
     std::vector<Patch> patches(1);
-    patches[0].bytes = elf_get_raw_binary(elf);
+    patches[0].bytes = elf.extract_binary();
     patches[0].offset = to_offset(require_symbol(sym_table, "BLOB_BEGIN"));
 
     for (const auto& cmd : cmds) {
@@ -723,6 +747,7 @@ inline void apply_patches(const char* input, const char* output, const std::vect
     }
 }
 
+#if 0
 inline void print_section(const ELFData& elf, const Elf32_Shdr& section)
 {
     log_debug("[%s]", elf_get_section_name(elf, section.sh_name));
@@ -748,6 +773,7 @@ inline void print_symbol(const ELFData& elf, const Elf32_Sym& symbol)
     log_debug("  .st_other = %hhX", symbol.st_other);
     log_debug("  .st_shndx = %hu", symbol.st_shndx);
 }
+#endif
 
 inline void patch(int argc, char** argv)
 {
@@ -760,7 +786,7 @@ inline void patch(int argc, char** argv)
     const char* elf_object = argv[2];
     const char* output_rom = argv[3];
 
-    ELFData elf = elf_from_file(elf_object);
+    Elf32 elf(elf_object);
     auto patches = generate_patches(elf, g_commands);
     apply_patches(input_rom, output_rom, patches);
 
