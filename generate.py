@@ -131,21 +131,6 @@ def fatal(message: str):
     sys.stderr.write("\n")
     sys.exit(1)
 
-def configure_toolchain():
-    toolchain_path = os.getenv("DEVKITARM")
-    if not toolchain_path:
-        fatal("DEVKITARM environment is not set")
-    if not os.path.isdir(toolchain_path):
-        fatal(f"devkitARM directory not found: {toolchain_path}")
-
-    symlink_path = f"{BUILD_DIR}/toolchain"
-    if os.path.exists(symlink_path):
-        if not os.path.islink(symlink_path):
-            fatal(f"{symlink_path} is not a symlink")
-        os.unlink(symlink_path)
-
-    os.symlink(toolchain_path, symlink_path, target_is_directory=True)
-
 def collect_files(directory: str, extension: str) -> List[str]:
     matches = glob.glob(f"{directory}/**/*{extension}", recursive=True)
     return matches
@@ -160,10 +145,6 @@ def derive_files(inputs: Union[List[str], str], pattern: str) -> List[str]:
     return outputs
 
 def main():
-    # configure_directories()
-    configure_toolchain()
-    # configure_tools()
-
     # Inputs
     png_files   = collect_files(GFX_DIR, ".png")
     c_sources   = collect_files(SRC_DIR, ".c")
