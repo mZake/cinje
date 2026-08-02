@@ -9,7 +9,8 @@
 #include <filesystem>
 #include <initializer_list>
 #include <memory>
-#include <string>
+#include <optional>
+#include <string_view>
 #include <utility>
 #include <vector>
 #include <unordered_map>
@@ -35,17 +36,11 @@
     #define HOST_TO_LITTLE64(x) (x)
 #endif
 
-#define LOCATION    Location{__FILE__, __LINE__}
-#define VECTOR(T)   std::vector<T>
+#define LOCATION Location{__FILE__, __LINE__}
 
-#define REPOINT(symbol, offset, set_thumb_bit) \
-    push_patch_command<RepointCommand>(LOCATION, symbol, offset, set_thumb_bit)
-
-#define REPLACE(offset, ...) \
-    push_patch_command<ReplaceCommand>(LOCATION, offset, VECTOR(uint8_t)(__VA_ARGS__))
-
-#define HOOK(symbol, offset, register_id) \
-    push_patch_command<HookCommand>(LOCATION, symbol, offset, register_id)
+#define REPOINT(...) g_patcher->repoint(LOCATION, __VA_ARGS__)
+#define REPLACE(...) g_patcher->replace(LOCATION, __VA_ARGS__)
+#define HOOK(...) g_patcher->hook(LOCATION, __VA_ARGS__)
 
 namespace fs = std::filesystem;
 
@@ -94,162 +89,6 @@ struct BufferBuilder
     void write_little_uint32(uint32_t value);
     void write_little_uint64(uint64_t value);
 };
-
-inline bool BufferParser::read_bytes(uint8_t* output, size_t count)
-{
-    if (m_buffer_current >= m_buffer_end)
-        return false;
-
-    auto next_current = m_buffer_current + count;
-    if (next_current >= m_buffer_end)
-        return false;
-
-    auto bytes = reinterpret_cast<const uint8_t*>(m_buffer_current);
-    std::memcpy(output, bytes, count);
-    m_buffer_current = next_current;
-
-    return true;
-}
-
-inline bool BufferParser::read_byte(uint8_t& output)
-{
-    return read_bytes(&output, sizeof(uint8_t));
-}
-
-inline bool BufferParser::read_uint16(uint16_t& output)
-{
-    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint16_t));
-}
-
-inline bool BufferParser::read_uint32(uint32_t& output)
-{
-    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint32_t));
-}
-
-inline bool BufferParser::read_uint64(uint64_t& output)
-{
-    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint64_t));
-}
-
-inline bool BufferParser::read_little_uint16(uint16_t& output)
-{
-    if (read_uint16(output)) {
-        output = LITTLE_TO_HOST16(output);
-        return true;
-    }
-
-    return false;
-}
-
-inline bool BufferParser::read_little_uint32(uint32_t& output)
-{
-    if (read_uint32(output)) {
-        output = LITTLE_TO_HOST32(output);
-        return true;
-    }
-
-    return false;
-}
-
-inline bool BufferParser::read_little_uint64(uint64_t& output)
-{
-    if (read_uint64(output)) {
-        output = LITTLE_TO_HOST64(output);
-        return true;
-    }
-
-    return false;
-}
-
-inline bool BufferParser::seek(size_t offset)
-{
-    auto next_current = m_buffer_begin + offset;
-    if (next_current >= m_buffer_end)
-        return false;
-
-    m_buffer_current = next_current;
-    return true;
-}
-
-inline void BufferBuilder::write_bytes(uint8_t byte)
-{
-    buffer.push_back(byte);
-}
-
-inline void BufferBuilder::write_bytes(std::initializer_list<uint8_t> bytes)
-{
-    buffer.insert(buffer.end(), bytes);
-}
-
-inline void BufferBuilder::write_bytes(const uint8_t* bytes, size_t count)
-{
-    buffer.insert(buffer.end(), bytes, bytes + count);
-}
-
-inline void BufferBuilder::write_bytes(size_t count, uint8_t value)
-{
-    buffer.insert(buffer.end(), count, value);
-}
-
-inline void BufferBuilder::write_uint16(uint16_t value)
-{
-    auto data_begin = reinterpret_cast<uint8_t*>(&value);
-    auto data_end = data_begin + sizeof(uint16_t);
-    buffer.insert(buffer.end(), data_begin, data_end);
-}
-
-inline void BufferBuilder::write_uint32(uint32_t value)
-{
-    auto data_begin = reinterpret_cast<uint8_t*>(&value);
-    auto data_end = data_begin + sizeof(uint32_t);
-    buffer.insert(buffer.end(), data_begin, data_end);
-}
-
-inline void BufferBuilder::write_uint64(uint64_t value)
-{
-    auto data_begin = reinterpret_cast<uint8_t*>(&value);
-    auto data_end = data_begin + sizeof(uint64_t);
-    buffer.insert(buffer.end(), data_begin, data_end);
-}
-
-inline void BufferBuilder::write_little_uint16(uint16_t value)
-{
-    write_uint16(HOST_TO_LITTLE16(value));
-}
-
-inline void BufferBuilder::write_little_uint32(uint32_t value)
-{
-    write_uint32(HOST_TO_LITTLE32(value));
-}
-
-inline void BufferBuilder::write_little_uint64(uint64_t value)
-{
-    write_uint64(HOST_TO_LITTLE64(value));
-}
-
-inline void log_fatal(const char* format, ...)
-{
-    std::va_list args;
-    va_start(args, format);
-
-    std::fprintf(stderr, "patchbin: error: ");
-    std::vfprintf(stderr, format, args);
-    std::fprintf(stderr, "\n");
-
-    va_end(args);
-    std::exit(EXIT_FAILURE);
-}
-
-inline void log_debug(const char* format, ...)
-{
-    std::va_list args;
-    va_start(args, format);
-
-    std::vfprintf(stderr, format, args);
-    std::fprintf(stderr, "\n");
-
-    va_end(args);
-}
 
 // Tiny ELF library for parsing ARM 32-bit LSB objects
 
@@ -387,9 +226,216 @@ private:
     std::vector<uint8_t> m_payload;
 };
 
-std::vector<uint8_t> read_entire_file(const char* filepath);
+struct Patch
+{
+    std::vector<uint8_t> bytes;
+    uint32_t offset = 0;
+};
 
-inline Elf32::Elf32(const char* path)
+struct Location
+{
+    const char* file = nullptr;
+    int line = 0;
+};
+
+class Patcher
+{
+public:
+    Patcher(const char* input_path, const Elf32& elf);
+
+    void repoint(Location location, const char* symbol, uint32_t offset, bool set_thumb_bit);
+    void replace(Location location, uint32_t offset, std::vector<uint8_t> bytes);
+    void hook(Location location, const char* symbol, uint32_t offset, uint8_t register_id);
+
+    void patch(const char* output_path);
+
+    const std::vector<Patch>& patches() const { return m_patches; }
+
+private:
+    void error(Location location, const char* format, ...) const;
+    std::optional<uint32_t> get_symbol_address(const char* symbol) const;
+
+private:
+    const char* m_input_path = nullptr;
+    size_t m_input_size = 0;
+    std::unordered_map<std::string_view, uint32_t> m_symbols;
+    std::vector<Patch> m_patches;
+    mutable bool m_has_error = false;
+};
+
+inline std::unique_ptr<Patcher> g_patcher;
+
+#ifdef PATCHBIN_IMPLEMENTATION
+
+static void log_fatal(const char* format, ...)
+{
+    std::va_list args;
+    va_start(args, format);
+
+    std::fprintf(stderr, "patchbin: error: ");
+    std::vfprintf(stderr, format, args);
+    std::fprintf(stderr, "\n");
+
+    va_end(args);
+    std::exit(EXIT_FAILURE);
+}
+
+static std::vector<uint8_t> read_entire_file(const char* filepath)
+{
+    std::FILE* stream = std::fopen(filepath, "rb");
+    if (!stream)
+        log_fatal("cannot open file: %s", filepath);
+
+    std::fseek(stream, 0, SEEK_END);
+    long size = std::ftell(stream);
+    std::fseek(stream, 0, SEEK_SET);
+
+    std::vector<uint8_t> buffer;
+    buffer.resize(size);
+    if (std::fread(buffer.data(), 1, buffer.size(), stream) != buffer.size())
+        log_fatal("cannot read file: %s", filepath);
+
+    return buffer;
+}
+
+static uint32_t to_offset(uint32_t address)
+{
+    return address - 0x8000000;
+}
+
+bool BufferParser::read_bytes(uint8_t* output, size_t count)
+{
+    if (m_buffer_current >= m_buffer_end)
+        return false;
+
+    auto next_current = m_buffer_current + count;
+    if (next_current >= m_buffer_end)
+        return false;
+
+    auto bytes = reinterpret_cast<const uint8_t*>(m_buffer_current);
+    std::memcpy(output, bytes, count);
+    m_buffer_current = next_current;
+
+    return true;
+}
+
+bool BufferParser::read_byte(uint8_t& output)
+{
+    return read_bytes(&output, sizeof(uint8_t));
+}
+
+bool BufferParser::read_uint16(uint16_t& output)
+{
+    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint16_t));
+}
+
+bool BufferParser::read_uint32(uint32_t& output)
+{
+    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint32_t));
+}
+
+bool BufferParser::read_uint64(uint64_t& output)
+{
+    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint64_t));
+}
+
+bool BufferParser::read_little_uint16(uint16_t& output)
+{
+    if (read_uint16(output)) {
+        output = LITTLE_TO_HOST16(output);
+        return true;
+    }
+
+    return false;
+}
+
+bool BufferParser::read_little_uint32(uint32_t& output)
+{
+    if (read_uint32(output)) {
+        output = LITTLE_TO_HOST32(output);
+        return true;
+    }
+
+    return false;
+}
+
+bool BufferParser::read_little_uint64(uint64_t& output)
+{
+    if (read_uint64(output)) {
+        output = LITTLE_TO_HOST64(output);
+        return true;
+    }
+
+    return false;
+}
+
+bool BufferParser::seek(size_t offset)
+{
+    auto next_current = m_buffer_begin + offset;
+    if (next_current >= m_buffer_end)
+        return false;
+
+    m_buffer_current = next_current;
+    return true;
+}
+
+void BufferBuilder::write_bytes(uint8_t byte)
+{
+    buffer.push_back(byte);
+}
+
+void BufferBuilder::write_bytes(std::initializer_list<uint8_t> bytes)
+{
+    buffer.insert(buffer.end(), bytes);
+}
+
+void BufferBuilder::write_bytes(const uint8_t* bytes, size_t count)
+{
+    buffer.insert(buffer.end(), bytes, bytes + count);
+}
+
+void BufferBuilder::write_bytes(size_t count, uint8_t value)
+{
+    buffer.insert(buffer.end(), count, value);
+}
+
+void BufferBuilder::write_uint16(uint16_t value)
+{
+    auto data_begin = reinterpret_cast<uint8_t*>(&value);
+    auto data_end = data_begin + sizeof(uint16_t);
+    buffer.insert(buffer.end(), data_begin, data_end);
+}
+
+void BufferBuilder::write_uint32(uint32_t value)
+{
+    auto data_begin = reinterpret_cast<uint8_t*>(&value);
+    auto data_end = data_begin + sizeof(uint32_t);
+    buffer.insert(buffer.end(), data_begin, data_end);
+}
+
+void BufferBuilder::write_uint64(uint64_t value)
+{
+    auto data_begin = reinterpret_cast<uint8_t*>(&value);
+    auto data_end = data_begin + sizeof(uint64_t);
+    buffer.insert(buffer.end(), data_begin, data_end);
+}
+
+void BufferBuilder::write_little_uint16(uint16_t value)
+{
+    write_uint16(HOST_TO_LITTLE16(value));
+}
+
+void BufferBuilder::write_little_uint32(uint32_t value)
+{
+    write_uint32(HOST_TO_LITTLE32(value));
+}
+
+void BufferBuilder::write_little_uint64(uint64_t value)
+{
+    write_uint64(HOST_TO_LITTLE64(value));
+}
+
+Elf32::Elf32(const char* path)
 {
     std::vector<uint8_t> payload = read_entire_file(path);
     BufferParser parser(payload.data(), payload.size());
@@ -448,19 +494,19 @@ inline Elf32::Elf32(const char* path)
     m_payload = std::move(payload);
 }
 
-inline Elf32_Shdr Elf32::get_section(uint32_t index) const
+Elf32_Shdr Elf32::get_section(uint32_t index) const
 {
     return m_sections[index];
 }
 
-inline const char* Elf32::get_string(const Elf32_Shdr& section, uint32_t index) const
+const char* Elf32::get_string(const Elf32_Shdr& section, uint32_t index) const
 {
     assert(section.sh_type == SHT_STRTAB);
     auto strings = reinterpret_cast<const char*>(m_payload.data() + section.sh_offset);
     return strings + index;
 }
 
-inline std::vector<Elf32_Sym> Elf32::extract_symbols(const Elf32_Shdr& section) const
+std::vector<Elf32_Sym> Elf32::extract_symbols(const Elf32_Shdr& section) const
 {
     assert(section.sh_type == SHT_SYMTAB);
 
@@ -483,7 +529,7 @@ inline std::vector<Elf32_Sym> Elf32::extract_symbols(const Elf32_Shdr& section) 
     return symbols;
 }
 
-inline std::vector<uint8_t> Elf32::extract_binary() const
+std::vector<uint8_t> Elf32::extract_binary() const
 {
     // Collect all sections whose type is SHF_ALLOC
     std::vector<std::pair<Elf32_Shdr, size_t>> alloc_sections;
@@ -520,38 +566,20 @@ inline std::vector<uint8_t> Elf32::extract_binary() const
     return builder.buffer;
 }
 
-inline std::vector<uint8_t> read_entire_file(const char* filepath)
+Patcher::Patcher(const char* input_path, const Elf32& elf)
+    : m_input_path(input_path)
 {
-    std::FILE* stream = std::fopen(filepath, "rb");
-    if (!stream)
-        log_fatal("cannot open file: %s", filepath);
+    std::error_code ec;
+    m_input_size = fs::file_size(m_input_path, ec);
 
-    std::fseek(stream, 0, SEEK_END);
-    long size = std::ftell(stream);
-    std::fseek(stream, 0, SEEK_SET);
-
-    std::vector<uint8_t> buffer;
-    buffer.resize(size);
-    if (std::fread(buffer.data(), 1, buffer.size(), stream) != buffer.size())
-        log_fatal("cannot read file: %s", filepath);
-
-    return buffer;
-}
-
-// Return a table that maps symbol names to their final addresses,
-// filtering irrelevant symbols in the process.
-inline std::unordered_map<std::string, uint32_t> elf_get_symbol_table(const Elf32& elf)
-{
-    std::unordered_map<std::string, uint32_t> symbol_table;
-
-    Elf32_Shdr symtab;
+    Elf32_Shdr symtab_section;
     for (const auto& section : elf.sections())
         if (section.sh_type == SHT_SYMTAB)
-            symtab = section;
+            symtab_section = section;
 
-    Elf32_Shdr strtab = elf.get_section(symtab.sh_link);
+    Elf32_Shdr strtab_section = elf.get_section(symtab_section.sh_link);
 
-    std::vector<Elf32_Sym> symbols = elf.extract_symbols(symtab);
+    std::vector<Elf32_Sym> symbols = elf.extract_symbols(symtab_section);
     for (const auto& symbol : symbols) {
         uint32_t st_type = ELF32_ST_TYPE(symbol.st_info);
         if (st_type == STT_SECTION || st_type == STT_FILE)
@@ -569,213 +597,134 @@ inline std::unordered_map<std::string, uint32_t> elf_get_symbol_table(const Elf3
             address = section.sh_addr + symbol.st_value;
         }
 
-        std::string name = elf.get_string(strtab, symbol.st_name);
-        symbol_table[name] = address;
+        std::string_view symbol_name = elf.get_string(strtab_section, symbol.st_name);
+        m_symbols[symbol_name] = address;
     }
 
-    return symbol_table;
+    Patch blob_patch;
+    blob_patch.bytes = elf.extract_binary();
+    blob_patch.offset = to_offset(m_symbols["BLOB_BEGIN"]);
+    m_patches.push_back(std::move(blob_patch));
 }
 
-struct Patch
+void Patcher::repoint(Location location, const char* symbol, uint32_t offset, bool set_thumb_bit)
 {
-    std::vector<uint8_t> bytes;
-    uint32_t offset = 0;
-};
+    auto address = get_symbol_address(symbol);
+    if (!address)
+        error(location, "symbol not found: %s", symbol);
+ 
+    *address = set_thumb_bit ? (*address | 1) : (*address & ~1);
 
-struct Location
-{
-    const char* file = nullptr;
-    int line = 0;
-};
+    BufferBuilder builder;
+    builder.write_little_uint32(*address);
 
-using SymbolTable = std::unordered_map<std::string, uint32_t>;
-
-inline uint32_t require_symbol(const SymbolTable& sym_table, const char* name)
-{
-    auto it = sym_table.find(name);
-    if (it == sym_table.end())
-        log_fatal("symbol not found: %s", name);
-
-    uint32_t address = it->second;
-    return address;
-}
-
-class PatchCommand
-{
-public:
-    virtual ~PatchCommand() = default;
-
-    virtual Patch generate(const SymbolTable& sym_table) const = 0;
-};
-
-class RepointCommand : public PatchCommand
-{
-public:
-    static constexpr int RepointSize = 4;
-
-    RepointCommand(Location location, const char* symbol, uint32_t offset, bool set_thumb_bit)
-        : m_location(location), m_symbol(symbol), m_offset(offset), m_set_thumb_bit(set_thumb_bit) {}
-
-    inline Patch generate(const SymbolTable& sym_table) const override
-    {
-        uint32_t address = require_symbol(sym_table, m_symbol);
-        address = m_set_thumb_bit ? (address | 1) : (address & ~1);
-
-        BufferBuilder builder;
-        builder.buffer.reserve(RepointSize);
-        builder.write_little_uint32(address);
-
-        Patch patch;
-        patch.offset = m_offset;
-        patch.bytes = std::move(builder.buffer);
-        return patch;
+    uint32_t offset_end = offset + builder.buffer.size();
+    if (offset_end >= m_input_size) {
+        size_t count = offset_end - m_input_size;
+        error(location, "operation overflows %s by 0x%zX bytes", m_input_path, count);
     }
 
-private:
-    Location m_location;
-    const char* m_symbol = nullptr;
-    uint32_t m_offset = 0;
-    bool m_set_thumb_bit = false;
-};
-
-class ReplaceCommand : public PatchCommand
-{
-public:
-    ReplaceCommand(Location location, uint32_t offset, std::vector<uint8_t> bytes)
-        : m_location(location), m_offset(offset), m_bytes(std::move(bytes)) {}
-
-    inline Patch generate(const SymbolTable&) const override
-    {
-        Patch patch;
-        patch.bytes = m_bytes;
-        patch.offset = m_offset;
-        return patch;
-    }
-
-private:
-    Location m_location;
-    uint32_t m_offset = 0;
-    std::vector<uint8_t> m_bytes;
-};
-
-class HookCommand : public PatchCommand
-{
-public:
-    static constexpr int HookSize = 10;
-
-    HookCommand(Location location, const char* symbol, uint32_t offset, uint8_t register_id)
-        : m_location(location), m_symbol(symbol), m_offset(offset), m_register_id(register_id) {}
-
-    inline Patch generate(const SymbolTable& sym_table) const override
-    {
-        uint8_t register_bits = m_register_id & 7;
-
-        BufferBuilder builder;
-        builder.buffer.reserve(HookSize);
-
-        uint32_t address = require_symbol(sym_table, m_symbol);
-        if (address % 4) {
-            builder.write_bytes(0x01);
-            builder.write_bytes(0x48 | register_bits);
-            builder.write_bytes(0x00 | (register_bits << 3));
-            builder.write_bytes({0x47, 0x00, 0x00});
-        } else {
-            builder.write_bytes(0x00);
-            builder.write_bytes(0x48 | register_bits);
-            builder.write_bytes(0x00 | (register_bits << 3));
-            builder.write_bytes(0x47);
-        }
-        builder.write_little_uint32(address | 1);
-
-        Patch patch;
-        patch.bytes = std::move(builder.buffer);
-        patch.offset = m_offset & ~1; // Ensure offset alignment is 2
-        return patch;
-    }
-
-private:
-    Location m_location;
-    const char* m_symbol = nullptr;
-    uint32_t m_offset = 0;
-    uint8_t m_register_id = 0;
-};
-
-using CommandList = std::vector<std::unique_ptr<PatchCommand>>;
-
-inline CommandList g_commands;
-
-template<typename T, typename... TArgs>
-void push_patch_command(TArgs&&... args)
-{
-    g_commands.push_back(std::make_unique<T>(std::forward<TArgs>(args)...));
+    Patch patch;
+    patch.offset = offset;
+    patch.bytes = std::move(builder.buffer);
+    m_patches.push_back(std::move(patch));
 }
 
-inline uint32_t to_offset(uint32_t address)
+void Patcher::replace(Location location, uint32_t offset, std::vector<uint8_t> bytes)
 {
-    return address - 0x8000000;
-}
-
-inline std::vector<Patch> generate_patches(const Elf32& elf, const CommandList& cmds)
-{
-    auto sym_table = elf_get_symbol_table(elf);
-
-    std::vector<Patch> patches(1);
-    patches[0].bytes = elf.extract_binary();
-    patches[0].offset = to_offset(require_symbol(sym_table, "BLOB_BEGIN"));
-
-    for (const auto& cmd : cmds) {
-        Patch patch = cmd->generate(sym_table);
-        patches.push_back(std::move(patch));
+    uint32_t offset_end = offset + bytes.size();
+    if (offset_end >= m_input_size) {
+        size_t count = offset_end - m_input_size;
+        error(location, "operation overflows %s by 0x%zX bytes", m_input_path, count);
     }
 
-    return patches;
+    Patch patch;
+    patch.offset = offset;
+    patch.bytes = std::move(bytes);
+    m_patches.push_back(std::move(patch));
 }
 
-inline void apply_patches(const char* input, const char* output, const std::vector<Patch>& patches)
+void Patcher::hook(Location location, const char* symbol, uint32_t offset, uint8_t register_id)
 {
+    uint8_t register_bits = register_id & 7;
+
+    auto address = get_symbol_address(symbol);
+    if (!address)
+        error(location, "symbol not found: %s", symbol);
+
+    if (register_id > 12)
+        error(location, "register R%u is not usable", register_id);
+
+    BufferBuilder builder;
+    if (*address % 4) {
+        builder.write_bytes(0x01);
+        builder.write_bytes(0x48 | register_bits);
+        builder.write_bytes(0x00 | (register_bits << 3));
+        builder.write_bytes({0x47, 0x00, 0x00});
+    } else {
+        builder.write_bytes(0x00);
+        builder.write_bytes(0x48 | register_bits);
+        builder.write_bytes(0x00 | (register_bits << 3));
+        builder.write_bytes(0x47);
+    }
+    builder.write_little_uint32(*address | 1);
+
+    uint32_t offset_end = offset + builder.buffer.size();
+    if (offset_end >= m_input_size) {
+        size_t count = offset_end - m_input_size;
+        error(location, "operation overflows %s by 0x%zX bytes", m_input_path, count);
+    }
+
+    Patch patch;
+    patch.bytes = std::move(builder.buffer);
+    patch.offset = offset & ~1; // Ensure offset alignment is 2
+    m_patches.push_back(std::move(patch));
+}
+
+void Patcher::patch(const char* output_path)
+{
+    if (m_has_error)
+        std::exit(EXIT_FAILURE);
+
     std::error_code ec; // Tag to force use of non-throwing overload
-    if (!fs::copy_file(input, output, fs::copy_options::overwrite_existing, ec))
-        log_fatal("cannot perform copy operation: from %s to %s", input, output);
+    if (!fs::copy_file(m_input_path, output_path, fs::copy_options::overwrite_existing, ec))
+        log_fatal("cannot perform copy operation: from %s to %s", m_input_path, output_path);
 
-    std::FILE* stream = std::fopen(output, "r+b");
+    std::FILE* stream = std::fopen(output_path, "r+b");
     if (!stream)
-        log_fatal("cannot open file: %s", output);
+        log_fatal("cannot open file: %s", output_path);
 
-    for (const auto& patch : patches) {
+    for (const auto& patch : m_patches) {
         std::fseek(stream, patch.offset, SEEK_SET);
         std::fwrite(patch.bytes.data(), 1, patch.bytes.size(), stream);
     }
 }
 
-#if 0
-inline void print_section(const ELFData& elf, const Elf32_Shdr& section)
+void Patcher::error(Location location, const char* format, ...) const
 {
-    log_debug("[%s]", elf_get_section_name(elf, section.sh_name));
-    log_debug("  .sh_name = %u", section.sh_name);
-    log_debug("  .sh_type = %u", section.sh_type);
-    log_debug("  .sh_flags = 0x%X", section.sh_flags);
-    log_debug("  .sh_addr = 0x%.08X", section.sh_addr);
-    log_debug("  .sh_offset = 0x%.08X", section.sh_offset);
-    log_debug("  .sh_size = %u", section.sh_size);
-    log_debug("  .sh_link = %u", section.sh_link);
-    log_debug("  .sh_info = %u", section.sh_info);
-    log_debug("  .sh_addralign = %u", section.sh_addralign);
-    log_debug("  .sh_entsize = %u", section.sh_entsize);
+    std::va_list args;
+    va_start(args, format);
+
+    std::fprintf(stderr, "%s:%d: ", location.file, location.line);
+    std::vfprintf(stderr, format, args);
+    std::fprintf(stderr, "\n");
+
+    m_has_error = true;
+    va_end(args);
 }
 
-inline void print_symbol(const ELFData& elf, const Elf32_Sym& symbol)
+std::optional<uint32_t> Patcher::get_symbol_address(const char* symbol) const
 {
-    log_debug("[%s]", elf_get_symbol_name(elf, symbol.st_name));
-    log_debug("  .st_name = %u", symbol.st_name);
-    log_debug("  .st_value = 0x%.08X", symbol.st_value);
-    log_debug("  .st_size = %u", symbol.st_size);
-    log_debug("  .st_info = %hhX", symbol.st_info);
-    log_debug("  .st_other = %hhX", symbol.st_other);
-    log_debug("  .st_shndx = %hu", symbol.st_shndx);
-}
-#endif
+    auto it = m_symbols.find(symbol);
+    if (it != m_symbols.end())
+        return it->second;
 
-inline void patch(int argc, char** argv)
+    return std::nullopt;
+}
+
+extern void patchbin_main();
+
+int main(int argc, char** argv)
 {
     if (argc != 4) {
         std::printf("Usage: patchbin INPUT_ROM ELF_OBJECT OUTPUT_ROM\n");
@@ -787,14 +736,18 @@ inline void patch(int argc, char** argv)
     const char* output_rom = argv[3];
 
     Elf32 elf(elf_object);
-    auto patches = generate_patches(elf, g_commands);
-    apply_patches(input_rom, output_rom, patches);
 
-    for (const auto& patch : patches) {
+    g_patcher = std::make_unique<Patcher>(input_rom, elf);
+    patchbin_main();
+    g_patcher->patch(output_rom);
+
+    for (const auto& patch : g_patcher->patches()) {
         std::printf("%.06X", patch.offset);
         for (auto byte : patch.bytes)
             std::printf(" %02hhX", byte);
         std::printf("\n");
     }
 }
+
+#endif
 
