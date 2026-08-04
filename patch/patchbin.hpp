@@ -238,10 +238,13 @@ struct Location
     int line = 0;
 };
 
+using SymbolMap = std::unordered_map<std::string_view, uint32_t>;
+
 class Patcher
 {
 public:
-    Patcher(const char* input_path, const Elf32& elf);
+    Patcher(const char* input_path, size_t input_size, const SymbolMap* symbol_map)
+        : m_input_path(input_path), m_input_size(input_size), m_symbol_map(symbol_map) {}
 
     void repoint(Location location, const char* symbol, uint32_t offset, bool set_thumb_bit);
     void replace(Location location, uint32_t offset, std::vector<uint8_t> bytes);
@@ -258,7 +261,7 @@ private:
 private:
     const char* m_input_path = nullptr;
     size_t m_input_size = 0;
-    std::unordered_map<std::string_view, uint32_t> m_symbols;
+    const std::unordered_map<std::string_view, uint32_t>* m_symbol_map;
     std::vector<Patch> m_patches;
     mutable bool m_has_error = false;
 };
@@ -566,47 +569,6 @@ std::vector<uint8_t> Elf32::extract_binary() const
     return builder.buffer;
 }
 
-Patcher::Patcher(const char* input_path, const Elf32& elf)
-    : m_input_path(input_path)
-{
-    std::error_code ec;
-    m_input_size = fs::file_size(m_input_path, ec);
-
-    Elf32_Shdr symtab_section;
-    for (const auto& section : elf.sections())
-        if (section.sh_type == SHT_SYMTAB)
-            symtab_section = section;
-
-    Elf32_Shdr strtab_section = elf.get_section(symtab_section.sh_link);
-
-    std::vector<Elf32_Sym> symbols = elf.extract_symbols(symtab_section);
-    for (const auto& symbol : symbols) {
-        uint32_t st_type = ELF32_ST_TYPE(symbol.st_info);
-        if (st_type == STT_SECTION || st_type == STT_FILE)
-            continue;
-
-        // Filter symbols in irrelevant sections
-        if (symbol.st_shndx == SHN_UNDEF || symbol.st_shndx == SHN_COMMON)
-            continue;
-
-        uint32_t address = 0;
-        if (symbol.st_shndx == SHN_ABS) {
-            address = symbol.st_value;
-        } else {
-            Elf32_Shdr section = elf.get_section(symbol.st_shndx);
-            address = section.sh_addr + symbol.st_value;
-        }
-
-        std::string_view symbol_name = elf.get_string(strtab_section, symbol.st_name);
-        m_symbols[symbol_name] = address;
-    }
-
-    Patch blob_patch;
-    blob_patch.bytes = elf.extract_binary();
-    blob_patch.offset = to_offset(m_symbols["BLOB_BEGIN"]);
-    m_patches.push_back(std::move(blob_patch));
-}
-
 void Patcher::repoint(Location location, const char* symbol, uint32_t offset, bool set_thumb_bit)
 {
     auto address = get_symbol_address(symbol);
@@ -715,11 +677,50 @@ void Patcher::error(Location location, const char* format, ...) const
 
 std::optional<uint32_t> Patcher::get_symbol_address(const char* symbol) const
 {
-    auto it = m_symbols.find(symbol);
-    if (it != m_symbols.end())
+    auto it = m_symbol_map->find(symbol);
+    if (it != m_symbol_map->end())
         return it->second;
 
     return std::nullopt;
+}
+
+static SymbolMap symbol_map_from_elf(const Elf32& elf)
+{
+    SymbolMap symbol_map;
+
+    Elf32_Shdr symtab_section;
+    for (const auto& section : elf.sections()) {
+        if (section.sh_type == SHT_SYMTAB) {
+            symtab_section = section;
+            break;
+        }
+    }
+
+    Elf32_Shdr strtab_section = elf.get_section(symtab_section.sh_link);
+
+    std::vector<Elf32_Sym> symbols = elf.extract_symbols(symtab_section);
+    for (const auto& symbol : symbols) {
+        uint32_t st_type = ELF32_ST_TYPE(symbol.st_info);
+        if (st_type == STT_SECTION || st_type == STT_FILE)
+            continue;
+
+        // Filter symbols in irrelevant sections
+        if (symbol.st_shndx == SHN_UNDEF || symbol.st_shndx == SHN_COMMON)
+            continue;
+
+        uint32_t address = 0;
+        if (symbol.st_shndx == SHN_ABS) {
+            address = symbol.st_value;
+        } else {
+            Elf32_Shdr section = elf.get_section(symbol.st_shndx);
+            address = section.sh_addr + symbol.st_value;
+        }
+
+        std::string_view name = elf.get_string(strtab_section, symbol.st_name);
+        symbol_map[name] = address;
+    }
+
+    return symbol_map;
 }
 
 extern void patchbin_main();
@@ -735,10 +736,20 @@ int main(int argc, char** argv)
     const char* elf_object = argv[2];
     const char* output_rom = argv[3];
 
-    Elf32 elf(elf_object);
+    std::error_code ec;
+    size_t input_size = fs::file_size(input_rom, ec);
 
-    g_patcher = std::make_unique<Patcher>(input_rom, elf);
+    Elf32 elf(elf_object);
+    SymbolMap symbol_map = symbol_map_from_elf(elf);
+
+    g_patcher = std::make_unique<Patcher>(input_rom, input_size, &symbol_map);
+
+    std::vector<uint8_t> blob_bytes = elf.extract_binary();
+    uint32_t blob_offset = to_offset(symbol_map["BLOB_BEGIN"]);
+    REPLACE(blob_offset, blob_bytes);
+
     patchbin_main();
+
     g_patcher->patch(output_rom);
 
     for (const auto& patch : g_patcher->patches()) {
