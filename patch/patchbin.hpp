@@ -40,6 +40,7 @@
 
 #define REPOINT(...) g_patcher->repoint(LOCATION, __VA_ARGS__)
 #define REPLACE(...) g_patcher->replace(LOCATION, __VA_ARGS__)
+#define REWRITE(...) g_patcher->rewrite(LOCATION, __VA_ARGS__)
 #define HOOK(...) g_patcher->hook(LOCATION, __VA_ARGS__)
 
 namespace fs = std::filesystem;
@@ -248,6 +249,8 @@ public:
 
     void repoint(Location location, const char* symbol, uint32_t offset, bool set_thumb_bit);
     void replace(Location location, uint32_t offset, std::vector<uint8_t> bytes);
+    void rewrite(Location location, const char* symbol, uint32_t offset,
+                 uint32_t param_count, uint8_t returns);
     void hook(Location location, const char* symbol, uint32_t offset, uint8_t register_id);
 
     void patch(const char* output_path);
@@ -603,6 +606,37 @@ void Patcher::replace(Location location, uint32_t offset, std::vector<uint8_t> b
     Patch patch;
     patch.offset = offset;
     patch.bytes = std::move(bytes);
+    m_patches.push_back(std::move(patch));
+}
+void Patcher::rewrite(Location location, const char* symbol, uint32_t offset,
+                      uint32_t param_count, uint8_t returns)
+{
+    auto address = get_symbol_address(symbol);
+    if (!address)
+        error(location, "symbol not found: %s", symbol);
+
+    BufferBuilder builder;
+    if (param_count <= 4) {
+        builder.write_bytes({0x10, 0xB5, 0x03, 0x4C, 0x00, 0xF0, 0x03, 0xF8, 0x10, 0xBC});
+        builder.write_bytes(returns + 1);
+        builder.write_bytes(0xBC);
+        builder.write_bytes(returns << 3);
+        builder.write_bytes({0x47, 0x20, 0x47});
+    } else {
+        error(location, "cannot rewrite function with more than 4 parameters");
+    }
+
+    builder.write_little_uint32(*address | 1);
+
+    uint32_t offset_end = offset + builder.buffer.size();
+    if (offset_end >= m_input_size) {
+        size_t count = offset_end - m_input_size;
+        error(location, "operation overflows %s by 0x%zX bytes", m_input_path, count);
+    }
+
+    Patch patch;
+    patch.offset = offset;
+    patch.bytes = std::move(builder.buffer);
     m_patches.push_back(std::move(patch));
 }
 

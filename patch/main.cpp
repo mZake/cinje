@@ -8,6 +8,7 @@ void patchbin_main()
     REPOINT("gItems", 0x132, true);
     REPOINT("CB2_ReturnToField", 0x800100, false);
     REPLACE(0x760, {0x00, 0x01, 0x02, 0x03, 0x04, 0x10, 0x12});
+    REWRITE("CB2_ReturnToField", 0x900200, 0, false);
 #else
     REPOINT("Invalid", 0x100, false);
     REPOINT("gMoveNames", 0x2000000, false);
