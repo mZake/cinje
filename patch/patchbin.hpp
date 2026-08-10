@@ -77,10 +77,10 @@ struct BufferBuilder
 {
     std::vector<uint8_t> buffer;
 
-    void write_bytes(uint8_t byte);
+    void write_byte(uint8_t byte);
+    void write_byte(uint8_t byte, size_t count);
     void write_bytes(std::initializer_list<uint8_t> bytes);
     void write_bytes(const uint8_t* bytes, size_t count);
-    void write_bytes(size_t count, uint8_t value);
 
     void write_uint16(uint16_t value);
     void write_uint32(uint32_t value);
@@ -385,9 +385,14 @@ bool BufferParser::seek(size_t offset)
     return true;
 }
 
-void BufferBuilder::write_bytes(uint8_t byte)
+void BufferBuilder::write_byte(uint8_t byte)
 {
     buffer.push_back(byte);
+}
+
+void BufferBuilder::write_byte(uint8_t byte, size_t count)
+{
+    buffer.insert(buffer.end(), count, byte);
 }
 
 void BufferBuilder::write_bytes(std::initializer_list<uint8_t> bytes)
@@ -400,30 +405,19 @@ void BufferBuilder::write_bytes(const uint8_t* bytes, size_t count)
     buffer.insert(buffer.end(), bytes, bytes + count);
 }
 
-void BufferBuilder::write_bytes(size_t count, uint8_t value)
-{
-    buffer.insert(buffer.end(), count, value);
-}
-
 void BufferBuilder::write_uint16(uint16_t value)
 {
-    auto data_begin = reinterpret_cast<uint8_t*>(&value);
-    auto data_end = data_begin + sizeof(uint16_t);
-    buffer.insert(buffer.end(), data_begin, data_end);
+    write_bytes(reinterpret_cast<uint8_t*>(&value), sizeof(uint16_t));
 }
 
 void BufferBuilder::write_uint32(uint32_t value)
 {
-    auto data_begin = reinterpret_cast<uint8_t*>(&value);
-    auto data_end = data_begin + sizeof(uint32_t);
-    buffer.insert(buffer.end(), data_begin, data_end);
+    write_bytes(reinterpret_cast<uint8_t*>(&value), sizeof(uint32_t));
 }
 
 void BufferBuilder::write_uint64(uint64_t value)
 {
-    auto data_begin = reinterpret_cast<uint8_t*>(&value);
-    auto data_end = data_begin + sizeof(uint64_t);
-    buffer.insert(buffer.end(), data_begin, data_end);
+    write_bytes(reinterpret_cast<uint8_t*>(&value), sizeof(uint64_t));
 }
 
 void BufferBuilder::write_little_uint16(uint16_t value)
