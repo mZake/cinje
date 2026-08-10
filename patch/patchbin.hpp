@@ -8,7 +8,6 @@
 #include <cstring>
 #include <filesystem>
 #include <initializer_list>
-#include <memory>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -36,12 +35,12 @@
     #define HOST_TO_LITTLE64(x) (x)
 #endif
 
-#define LOCATION Location{__FILE__, __LINE__}
+#define LOCATION            Location{__FILE__, __LINE__}
 
-#define REPOINT(...) g_patcher->repoint(LOCATION, __VA_ARGS__)
-#define REPLACE(...) g_patcher->replace(LOCATION, __VA_ARGS__)
-#define REWRITE(...) g_patcher->rewrite(LOCATION, __VA_ARGS__)
-#define HOOK(...) g_patcher->hook(LOCATION, __VA_ARGS__)
+#define PATCH_POINTER(...)  patch_pointer_at(LOCATION, __VA_ARGS__)
+#define PATCH_BYTES(...)    patch_bytes_at(LOCATION, __VA_ARGS__)
+#define PATCH_HOOK(...)     patch_hook_at(LOCATION, __VA_ARGS__)
+#define PATCH_FUNC(...)     patch_function_at(LOCATION, __VA_ARGS__)
 
 namespace fs = std::filesystem;
 
@@ -241,37 +240,29 @@ struct Location
 
 using SymbolMap = std::unordered_map<std::string_view, uint32_t>;
 
-class Patcher
+std::optional<uint32_t> resolve_symbol(const SymbolMap& map, const char* name);
+
+struct Patcher
 {
-public:
-    Patcher(const char* input_path, size_t input_size, const SymbolMap* symbol_map)
-        : m_input_path(input_path), m_input_size(input_size), m_symbol_map(symbol_map) {}
-
-    void repoint(Location location, const char* symbol, uint32_t offset, bool set_thumb_bit);
-    void replace(Location location, uint32_t offset, std::vector<uint8_t> bytes);
-    void rewrite(Location location, const char* symbol, uint32_t offset,
-                 uint32_t param_count, uint8_t returns);
-    void hook(Location location, const char* symbol, uint32_t offset, uint8_t register_id);
-
-    void patch(const char* output_path);
-
-    const std::vector<Patch>& patches() const { return m_patches; }
-
-private:
-    void error(Location location, const char* format, ...) const;
-    std::optional<uint32_t> get_symbol_address(const char* symbol) const;
-
-private:
-    const char* m_input_path = nullptr;
-    size_t m_input_size = 0;
-    const std::unordered_map<std::string_view, uint32_t>* m_symbol_map;
-    std::vector<Patch> m_patches;
-    mutable bool m_has_error = false;
+    const char* input_path = nullptr;
+    size_t input_size = 0;
+    const std::unordered_map<std::string_view, uint32_t>* symbol_map;
+    std::vector<Patch> patches;
+    bool has_error = false;
 };
 
-inline std::unique_ptr<Patcher> g_patcher;
+void begin_patching(const char* input_path, const SymbolMap* symbol_map);
+void end_patching(const char* output_path);
+
+void patch_pointer_at(Location location, uint32_t offset, const char* name, bool set_thumb_bit);
+void patch_bytes_at(Location location, uint32_t offset, std::vector<uint8_t> bytes);
+void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t register_id);
+void patch_function_at(Location location, uint32_t offset, const char* name,
+                       uint32_t param_count, uint8_t returns);
 
 #ifdef PATCHBIN_IMPLEMENTATION
+
+static Patcher s_patcher;
 
 static void log_fatal(const char* format, ...)
 {
@@ -566,11 +557,69 @@ std::vector<uint8_t> Elf32::extract_binary() const
     return builder.buffer;
 }
 
-void Patcher::repoint(Location location, const char* symbol, uint32_t offset, bool set_thumb_bit)
+static void patch_error(Location location, const char* format, ...)
 {
-    auto address = get_symbol_address(symbol);
+    std::va_list args;
+    va_start(args, format);
+
+    std::fprintf(stderr, "%s:%d: ", location.file, location.line);
+    std::vfprintf(stderr, format, args);
+    std::fprintf(stderr, "\n");
+
+    va_end(args);
+    s_patcher.has_error = true;
+}
+
+std::optional<uint32_t> resolve_symbol(const SymbolMap& map, const char* name)
+{
+    auto it = map.find(name);
+    if (it == map.end())
+        return std::nullopt;
+
+    return it->second;
+}
+
+void begin_patching(const char* input_path, const SymbolMap* symbol_map)
+{
+    std::error_code ec;
+    size_t input_size = fs::file_size(input_path, ec);
+
+    s_patcher.input_path = input_path;
+    s_patcher.input_size = input_size;
+    s_patcher.symbol_map = symbol_map;
+}
+
+void end_patching(const char* output_path)
+{
+    if (s_patcher.has_error)
+        std::exit(EXIT_FAILURE);
+
+    std::error_code ec; // Tag to force use of non-throwing overload
+    if (!fs::copy_file(s_patcher.input_path, output_path,
+                       fs::copy_options::overwrite_existing, ec))
+        log_fatal("cannot copy %s to %s", s_patcher.input_path, output_path);
+
+    std::FILE* stream = std::fopen(output_path, "r+b");
+    if (!stream)
+        log_fatal("cannot open file: %s", output_path);
+
+    for (const auto& patch : s_patcher.patches) {
+        std::fseek(stream, patch.offset, SEEK_SET);
+        std::fwrite(patch.bytes.data(), 1, patch.bytes.size(), stream);
+    }
+
+    s_patcher.input_path = nullptr;
+    s_patcher.input_size = 0;
+    s_patcher.symbol_map = nullptr;
+    s_patcher.patches.clear();
+    s_patcher.has_error = false;
+}
+
+void patch_pointer_at(Location location, uint32_t offset, const char* name, bool set_thumb_bit)
+{
+    auto address = resolve_symbol(*s_patcher.symbol_map, name);
     if (!address)
-        error(location, "symbol not found: %s", symbol);
+        patch_error(location, "symbol not found: %s", name);
  
     *address = set_thumb_bit ? (*address | 1) : (*address & ~1);
 
@@ -578,72 +627,43 @@ void Patcher::repoint(Location location, const char* symbol, uint32_t offset, bo
     builder.write_little_uint32(*address);
 
     uint32_t offset_end = offset + builder.buffer.size();
-    if (offset_end >= m_input_size) {
-        size_t count = offset_end - m_input_size;
-        error(location, "operation overflows %s by 0x%zX bytes", m_input_path, count);
+    if (offset_end >= s_patcher.input_size) {
+        size_t count = offset_end - s_patcher.input_size;
+        patch_error(location, "operation overflows %s by 0x%zX bytes",
+                       s_patcher.input_path, count);
     }
 
     Patch patch;
     patch.offset = offset;
     patch.bytes = std::move(builder.buffer);
-    m_patches.push_back(std::move(patch));
+    s_patcher.patches.push_back(std::move(patch));
 }
 
-void Patcher::replace(Location location, uint32_t offset, std::vector<uint8_t> bytes)
+void patch_bytes_at(Location location, uint32_t offset, std::vector<uint8_t> bytes)
 {
     uint32_t offset_end = offset + bytes.size();
-    if (offset_end >= m_input_size) {
-        size_t count = offset_end - m_input_size;
-        error(location, "operation overflows %s by 0x%zX bytes", m_input_path, count);
+    if (offset_end >= s_patcher.input_size) {
+        size_t count = offset_end - s_patcher.input_size;
+        patch_error(location, "operation overflows %s by 0x%zX bytes",
+                       s_patcher.input_path, count);
     }
 
     Patch patch;
     patch.offset = offset;
     patch.bytes = std::move(bytes);
-    m_patches.push_back(std::move(patch));
-}
-void Patcher::rewrite(Location location, const char* symbol, uint32_t offset,
-                      uint32_t param_count, uint8_t returns)
-{
-    auto address = get_symbol_address(symbol);
-    if (!address)
-        error(location, "symbol not found: %s", symbol);
-
-    BufferBuilder builder;
-    if (param_count <= 4) {
-        builder.write_bytes({0x10, 0xB5, 0x03, 0x4C, 0x00, 0xF0, 0x03, 0xF8, 0x10, 0xBC});
-        builder.write_byte(returns + 1);
-        builder.write_byte(0xBC);
-        builder.write_byte(returns << 3);
-        builder.write_bytes({0x47, 0x20, 0x47});
-    } else {
-        error(location, "cannot rewrite function with more than 4 parameters");
-    }
-
-    builder.write_little_uint32(*address | 1);
-
-    uint32_t offset_end = offset + builder.buffer.size();
-    if (offset_end >= m_input_size) {
-        size_t count = offset_end - m_input_size;
-        error(location, "operation overflows %s by 0x%zX bytes", m_input_path, count);
-    }
-
-    Patch patch;
-    patch.offset = offset;
-    patch.bytes = std::move(builder.buffer);
-    m_patches.push_back(std::move(patch));
+    s_patcher.patches.push_back(std::move(patch));
 }
 
-void Patcher::hook(Location location, const char* symbol, uint32_t offset, uint8_t register_id)
+void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t register_id)
 {
     uint8_t register_bits = register_id & 7;
 
-    auto address = get_symbol_address(symbol);
+    auto address = resolve_symbol(*s_patcher.symbol_map, name);
     if (!address)
-        error(location, "symbol not found: %s", symbol);
+        patch_error(location, "symbol not found: %s", name);
 
     if (register_id > 12)
-        error(location, "register R%u is not usable", register_id);
+        patch_error(location, "register R%u is not usable", register_id);
 
     BufferBuilder builder;
     if (*address % 4) {
@@ -660,56 +680,49 @@ void Patcher::hook(Location location, const char* symbol, uint32_t offset, uint8
     builder.write_little_uint32(*address | 1);
 
     uint32_t offset_end = offset + builder.buffer.size();
-    if (offset_end >= m_input_size) {
-        size_t count = offset_end - m_input_size;
-        error(location, "operation overflows %s by 0x%zX bytes", m_input_path, count);
+    if (offset_end >= s_patcher.input_size) {
+        size_t count = offset_end - s_patcher.input_size;
+        patch_error(location, "operation overflows %s by 0x%zX bytes",
+                       s_patcher.input_path, count);
     }
 
     Patch patch;
     patch.bytes = std::move(builder.buffer);
     patch.offset = offset & ~1; // Ensure offset alignment is 2
-    m_patches.push_back(std::move(patch));
+    s_patcher.patches.push_back(std::move(patch));
 }
 
-void Patcher::patch(const char* output_path)
+void patch_function_at(Location location, uint32_t offset, const char* name,
+                       uint32_t param_count, uint8_t returns)
 {
-    if (m_has_error)
-        std::exit(EXIT_FAILURE);
+    auto address = resolve_symbol(*s_patcher.symbol_map, name);
+    if (!address)
+        patch_error(location, "symbol not found: %s", name);
 
-    std::error_code ec; // Tag to force use of non-throwing overload
-    if (!fs::copy_file(m_input_path, output_path, fs::copy_options::overwrite_existing, ec))
-        log_fatal("cannot perform copy operation: from %s to %s", m_input_path, output_path);
-
-    std::FILE* stream = std::fopen(output_path, "r+b");
-    if (!stream)
-        log_fatal("cannot open file: %s", output_path);
-
-    for (const auto& patch : m_patches) {
-        std::fseek(stream, patch.offset, SEEK_SET);
-        std::fwrite(patch.bytes.data(), 1, patch.bytes.size(), stream);
+    BufferBuilder builder;
+    if (param_count <= 4) {
+        builder.write_bytes({0x10, 0xB5, 0x03, 0x4C, 0x00, 0xF0, 0x03, 0xF8, 0x10, 0xBC});
+        builder.write_byte(returns + 1);
+        builder.write_byte(0xBC);
+        builder.write_byte(returns << 3);
+        builder.write_bytes({0x47, 0x20, 0x47});
+    } else {
+        patch_error(location, "cannot rewrite function with more than 4 parameters");
     }
-}
 
-void Patcher::error(Location location, const char* format, ...) const
-{
-    std::va_list args;
-    va_start(args, format);
+    builder.write_little_uint32(*address | 1);
 
-    std::fprintf(stderr, "%s:%d: ", location.file, location.line);
-    std::vfprintf(stderr, format, args);
-    std::fprintf(stderr, "\n");
+    uint32_t offset_end = offset + builder.buffer.size();
+    if (offset_end >= s_patcher.input_size) {
+        size_t count = offset_end - s_patcher.input_size;
+        patch_error(location, "operation overflows %s by 0x%zX bytes",
+                       s_patcher.input_path, count);
+    }
 
-    m_has_error = true;
-    va_end(args);
-}
-
-std::optional<uint32_t> Patcher::get_symbol_address(const char* symbol) const
-{
-    auto it = m_symbol_map->find(symbol);
-    if (it != m_symbol_map->end())
-        return it->second;
-
-    return std::nullopt;
+    Patch patch;
+    patch.offset = offset;
+    patch.bytes = std::move(builder.buffer);
+    s_patcher.patches.push_back(std::move(patch));
 }
 
 static SymbolMap symbol_map_from_elf(const Elf32& elf)
@@ -764,28 +777,27 @@ int main(int argc, char** argv)
     const char* elf_object = argv[2];
     const char* output_rom = argv[3];
 
-    std::error_code ec;
-    size_t input_size = fs::file_size(input_rom, ec);
-
     Elf32 elf(elf_object);
     SymbolMap symbol_map = symbol_map_from_elf(elf);
 
-    g_patcher = std::make_unique<Patcher>(input_rom, input_size, &symbol_map);
-
     std::vector<uint8_t> blob_bytes = elf.extract_binary();
-    uint32_t blob_offset = to_offset(symbol_map["BLOB_BEGIN"]);
-    REPLACE(blob_offset, blob_bytes);
+    auto blob_offset = resolve_symbol(symbol_map, "BLOB_BEGIN");
+    if (blob_offset)
+        *blob_offset = to_offset(*blob_offset);
 
+    begin_patching(input_rom, &symbol_map);
+
+    PATCH_BYTES(*blob_offset, blob_bytes);
     patchbin_main();
 
-    g_patcher->patch(output_rom);
-
-    for (const auto& patch : g_patcher->patches()) {
+    for (const auto& patch : s_patcher.patches) {
         std::printf("%.06X", patch.offset);
         for (auto byte : patch.bytes)
             std::printf(" %02hhX", byte);
         std::printf("\n");
     }
+
+    end_patching(output_rom);
 }
 
 #endif
