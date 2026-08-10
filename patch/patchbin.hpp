@@ -552,14 +552,14 @@ std::vector<uint8_t> Elf32::extract_binary() const
         uint32_t align = section.sh_addralign;
         if (align != 0 && builder.buffer.size() % align != 0) {
             uint32_t padding = align - builder.buffer.size() % align;
-            builder.write_bytes(padding, 0x00);
+            builder.write_byte(0x00, padding);
         }
 
         if (section.sh_type == SHT_PROGBITS) {
             const uint8_t* bytes = m_payload.data() + section.sh_offset;
             builder.write_bytes(bytes, section.sh_size);
         } else if (section.sh_type == SHT_NOBITS) {
-            builder.write_bytes(section.sh_size, 0x00);
+            builder.write_byte(0x00, section.sh_size);
         }
     }
 
@@ -612,9 +612,9 @@ void Patcher::rewrite(Location location, const char* symbol, uint32_t offset,
     BufferBuilder builder;
     if (param_count <= 4) {
         builder.write_bytes({0x10, 0xB5, 0x03, 0x4C, 0x00, 0xF0, 0x03, 0xF8, 0x10, 0xBC});
-        builder.write_bytes(returns + 1);
-        builder.write_bytes(0xBC);
-        builder.write_bytes(returns << 3);
+        builder.write_byte(returns + 1);
+        builder.write_byte(0xBC);
+        builder.write_byte(returns << 3);
         builder.write_bytes({0x47, 0x20, 0x47});
     } else {
         error(location, "cannot rewrite function with more than 4 parameters");
@@ -647,15 +647,15 @@ void Patcher::hook(Location location, const char* symbol, uint32_t offset, uint8
 
     BufferBuilder builder;
     if (*address % 4) {
-        builder.write_bytes(0x01);
-        builder.write_bytes(0x48 | register_bits);
-        builder.write_bytes(0x00 | (register_bits << 3));
+        builder.write_byte(0x01);
+        builder.write_byte(0x48 | register_bits);
+        builder.write_byte(0x00 | (register_bits << 3));
         builder.write_bytes({0x47, 0x00, 0x00});
     } else {
-        builder.write_bytes(0x00);
-        builder.write_bytes(0x48 | register_bits);
-        builder.write_bytes(0x00 | (register_bits << 3));
-        builder.write_bytes(0x47);
+        builder.write_byte(0x00);
+        builder.write_byte(0x48 | register_bits);
+        builder.write_byte(0x00 | (register_bits << 3));
+        builder.write_byte(0x47);
     }
     builder.write_little_uint32(*address | 1);
 
