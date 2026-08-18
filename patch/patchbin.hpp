@@ -836,16 +836,7 @@ int main(int argc, char** argv)
     Elf32 elf{args.elf_object_path};
 
     begin_patching(args.input_binary_path, args.output_binary_path, elf);
-
     patchbin_main();
-
-    for (const auto& patch : s_patcher.patches) {
-        std::printf("%.06X", patch.offset);
-        for (auto byte : patch.bytes)
-            std::printf(" %02hhX", byte);
-        std::printf("\n");
-    }
-
     end_patching();
 }
 
