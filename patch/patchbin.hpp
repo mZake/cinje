@@ -267,29 +267,28 @@ void patch_function_at(Location location, uint32_t offset, const char* name,
 
 static Patcher s_patcher;
 
+static void log_fatal_no_prefix(const char* format, std::va_list args)
+{
+    std::vfprintf(stderr, format, args);
+    std::fprintf(stderr, "\n");
+    std::exit(EXIT_FAILURE);
+}
+
 static void log_fatal_no_prefix(const char* format, ...)
 {
     std::va_list args;
     va_start(args, format);
-
-    std::vfprintf(stderr, format, args);
-    std::fprintf(stderr, "\n");
-
-    va_end(args);
-    std::exit(EXIT_FAILURE);
+    log_fatal_no_prefix(format, args);
+    // No va_end because the program is terminated at this point.
 }
 
 static void log_fatal(const char* format, ...)
 {
     std::va_list args;
     va_start(args, format);
-
     std::fprintf(stderr, "patchbin: error: ");
-    std::vfprintf(stderr, format, args);
-    std::fprintf(stderr, "\n");
-
-    va_end(args);
-    std::exit(EXIT_FAILURE);
+    log_fatal_no_prefix(format, args);
+    // No va_end because the program is terminated at this point.
 }
 
 static std::vector<uint8_t> read_entire_file(const char* filepath)
