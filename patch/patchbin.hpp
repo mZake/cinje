@@ -267,6 +267,18 @@ void patch_function_at(Location location, uint32_t offset, const char* name,
 
 static Patcher s_patcher;
 
+static void log_fatal_no_prefix(const char* format, ...)
+{
+    std::va_list args;
+    va_start(args, format);
+
+    std::vfprintf(stderr, format, args);
+    std::fprintf(stderr, "\n");
+
+    va_end(args);
+    std::exit(EXIT_FAILURE);
+}
+
 static void log_fatal(const char* format, ...)
 {
     std::va_list args;
@@ -794,20 +806,37 @@ void patch_function_at(Location location, uint32_t offset, const char* name,
 
 extern void patchbin_main();
 
-int main(int argc, char** argv)
+struct ParsedArgs
 {
-    if (argc != 4) {
-        std::printf("Usage: patchbin INPUT_ROM ELF_OBJECT OUTPUT_ROM\n");
-        std::exit(EXIT_FAILURE);
+    const char* input_binary_path = nullptr;
+    const char* elf_object_path = nullptr;
+    const char* output_binary_path = nullptr;
+};
+
+static ParsedArgs parse_args(int argc, char** argv)
+{
+    if (argc != 4)
+    {
+        log_fatal_no_prefix("Usage: patchbin input-binary elf-object output-binary");
     }
 
-    const char* input_binary_path = argv[1];
-    const char* elf_path = argv[2];
-    const char* output_binary_path = argv[3];
+    // Skip executable path argument.
+    ++argv;
 
-    Elf32 elf{elf_path};
+    ParsedArgs args;
+    args.input_binary_path = *argv++;
+    args.elf_object_path = *argv++;
+    args.output_binary_path = *argv++;
+    return args;
+}
 
-    begin_patching(input_binary_path, output_binary_path, elf);
+int main(int argc, char** argv)
+{
+    ParsedArgs args = parse_args(argc, argv);
+
+    Elf32 elf{args.elf_object_path};
+
+    begin_patching(args.input_binary_path, args.output_binary_path, elf);
 
     patchbin_main();
 
