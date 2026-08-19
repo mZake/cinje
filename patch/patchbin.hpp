@@ -695,61 +695,81 @@ void end_patching()
 
 void patch_pointer_at(Location location, uint32_t offset, const char* name, bool set_thumb_bit)
 {
-    auto address = resolve_symbol(s_patcher.symbol_map, name);
+    auto& p = s_patcher;
+
+    auto address = resolve_symbol(p.symbol_map, name);
     if (!address)
+    {
         patch_error(location, "symbol not found: %s", name);
+        return;
+    }
  
     *address = set_thumb_bit ? (*address | 1) : (*address & ~1);
 
     BufferBuilder builder;
     builder.write_little_uint32(*address);
 
-    uint32_t offset_end = offset + builder.buffer.size();
-    if (offset_end >= s_patcher.binary_size) {
-        size_t count = offset_end - s_patcher.binary_size;
-        patch_error(location, "operation overflows %s by 0x%zX bytes",
-                       s_patcher.binary_size, count);
+    uint32_t end_offset = offset + builder.buffer.size();
+    if (end_offset >= p.binary_size)
+    {
+        size_t count = end_offset - p.binary_size;
+        patch_error(location, "operation overflows %s by 0x%zX bytes", p.input_binary, count);
+        return;
     }
 
     Patch patch;
     patch.offset = offset;
     patch.bytes = std::move(builder.buffer);
-    s_patcher.patches.push_back(std::move(patch));
+    p.patches.push_back(std::move(patch));
 }
 
 void patch_bytes_at(Location location, uint32_t offset, std::vector<uint8_t> bytes)
 {
-    uint32_t offset_end = offset + bytes.size();
-    if (offset_end >= s_patcher.binary_size) {
-        size_t count = offset_end - s_patcher.binary_size;
-        patch_error(location, "operation overflows %s by 0x%zX bytes",
-                       s_patcher.input_binary, count);
+    auto& p = s_patcher;
+
+    uint32_t end_offset = offset + bytes.size();
+    if (end_offset >= p.binary_size)
+    {
+        size_t count = end_offset - p.binary_size;
+        patch_error(location, "operation overflows %s by 0x%zX bytes", p.input_binary, count);
+        return;
     }
 
     Patch patch;
     patch.offset = offset;
     patch.bytes = std::move(bytes);
-    s_patcher.patches.push_back(std::move(patch));
+    p.patches.push_back(std::move(patch));
 }
 
 void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t register_id)
 {
-    uint8_t register_bits = register_id & 7;
+    auto& p = s_patcher;
 
-    auto address = resolve_symbol(s_patcher.symbol_map, name);
+    auto address = resolve_symbol(p.symbol_map, name);
     if (!address)
+    {
         patch_error(location, "symbol not found: %s", name);
+        return;
+    }
 
     if (register_id > 12)
+    {
         patch_error(location, "register R%u is not usable", register_id);
+        return;
+    }
+
+    uint8_t register_bits = register_id & 7;
 
     BufferBuilder builder;
-    if (*address % 4) {
+    if (*address % 4)
+    {
         builder.write_byte(0x01);
         builder.write_byte(0x48 | register_bits);
         builder.write_byte(0x00 | (register_bits << 3));
         builder.write_bytes({0x47, 0x00, 0x00});
-    } else {
+    } 
+    else
+    {
         builder.write_byte(0x00);
         builder.write_byte(0x48 | register_bits);
         builder.write_byte(0x00 | (register_bits << 3));
@@ -757,50 +777,58 @@ void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t
     }
     builder.write_little_uint32(*address | 1);
 
-    uint32_t offset_end = offset + builder.buffer.size();
-    if (offset_end >= s_patcher.binary_size) {
-        size_t count = offset_end - s_patcher.binary_size;
-        patch_error(location, "operation overflows %s by 0x%zX bytes",
-                       s_patcher.input_binary, count);
+    uint32_t end_offset = offset + builder.buffer.size();
+    if (end_offset >= p.binary_size)
+    {
+        size_t count = end_offset - p.binary_size;
+        patch_error(location, "operation overflows %s by 0x%zX bytes", p.input_binary, count);
+        return;
     }
 
     Patch patch;
     patch.bytes = std::move(builder.buffer);
     patch.offset = offset & ~1; // Ensure offset alignment is 2
-    s_patcher.patches.push_back(std::move(patch));
+    p.patches.push_back(std::move(patch));
 }
 
 void patch_function_at(Location location, uint32_t offset, const char* name,
                        uint32_t param_count, uint8_t returns)
 {
-    auto address = resolve_symbol(s_patcher.symbol_map, name);
-    if (!address)
-        patch_error(location, "symbol not found: %s", name);
+    auto& p = s_patcher;
 
-    BufferBuilder builder;
-    if (param_count <= 4) {
-        builder.write_bytes({0x10, 0xB5, 0x03, 0x4C, 0x00, 0xF0, 0x03, 0xF8, 0x10, 0xBC});
-        builder.write_byte(returns + 1);
-        builder.write_byte(0xBC);
-        builder.write_byte(returns << 3);
-        builder.write_bytes({0x47, 0x20, 0x47});
-    } else {
-        patch_error(location, "cannot rewrite function with more than 4 parameters");
+    auto address = resolve_symbol(p.symbol_map, name);
+    if (!address)
+    {
+        patch_error(location, "symbol not found: %s", name);
+        return;
     }
 
+    if (param_count > 4)
+    {
+        patch_error(location, "cannot rewrite function with more than 4 parameters");
+        return;
+    }
+
+    BufferBuilder builder;
+    builder.write_bytes({0x10, 0xB5, 0x03, 0x4C, 0x00, 0xF0, 0x03, 0xF8, 0x10, 0xBC});
+    builder.write_byte(returns + 1);
+    builder.write_byte(0xBC);
+    builder.write_byte(returns << 3);
+    builder.write_bytes({0x47, 0x20, 0x47});
     builder.write_little_uint32(*address | 1);
 
-    uint32_t offset_end = offset + builder.buffer.size();
-    if (offset_end >= s_patcher.binary_size) {
-        size_t count = offset_end - s_patcher.binary_size;
-        patch_error(location, "operation overflows %s by 0x%zX bytes",
-                       s_patcher.input_binary, count);
+    uint32_t end_offset = offset + builder.buffer.size();
+    if (end_offset >= p.binary_size)
+    {
+        size_t count = end_offset - p.binary_size;
+        patch_error(location, "operation overflows %s by 0x%zX bytes", p.input_binary, count);
+        return;
     }
 
     Patch patch;
     patch.offset = offset;
     patch.bytes = std::move(builder.buffer);
-    s_patcher.patches.push_back(std::move(patch));
+    p.patches.push_back(std::move(patch));
 }
 
 extern void patchbin_main();

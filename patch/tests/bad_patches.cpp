@@ -11,5 +11,9 @@ void patchbin_main()
     PATCH_HOOK(0x0000100, "NotASymbol", 0);
     PATCH_HOOK(0x2000000, "CB2_ReturnToField", 0);
     PATCH_HOOK(0x0000100, "CB2_ReturnToField", 16);
+
+    PATCH_FUNC(0x0000100, "NotASymbol", 0, false);
+    PATCH_FUNC(0x0000200, "CB2_ReturnToField", 5, false);
+    PATCH_FUNC(0x2000000, "CB2_ReturnToField", 0, false);
 }
 
