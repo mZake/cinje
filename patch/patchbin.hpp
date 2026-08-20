@@ -686,8 +686,15 @@ void end_patching()
 
     for (const auto& patch : p.patches)
     {
-        std::fseek(stream, patch.offset, SEEK_SET);
-        std::fwrite(patch.bytes.data(), 1, patch.bytes.size(), stream);
+        if (std::fseek(stream, patch.offset, SEEK_SET) != 0)
+        {
+            log_fatal("failed to seek file: %s", p.output_binary);
+        }
+
+        if (std::fwrite(patch.bytes.data(), 1, patch.bytes.size(), stream) != patch.bytes.size())
+        {
+            log_fatal("failed to write file: %s", p.output_binary);
+        }
     }
 
     s_patcher = {};
