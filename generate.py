@@ -11,8 +11,8 @@ from typing import List, Optional, Union
 
 # Change this if needed
 OFFSET_TO_INSERT = 0x1400000
-BASE_ROM_FILE = "base.gba"
-OUT_ROM_FILE = "out.gba"
+BASE_ROM_FILE = "BPRE.gba"
+OUT_ROM_FILE = "BPRE_out.gba"
 
 ASM_DIR = "asm"
 GFX_DIR = "graphics"
