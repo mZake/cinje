@@ -6,7 +6,7 @@ HERE="$(dirname "$(realpath "${0}")")"
 
 CXX="${CXX:-c++}"
 
-CXXFLAGS="-std=c++17 -I .. -Wall -Wextra"
+CXXFLAGS="-std=c++17 -I ../../patch -Wall -Wextra"
 
 INPUT_BINARY="${HERE}/data/input.bin"
 ELF_OBJECT="${HERE}/data/elf.o"
