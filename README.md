@@ -1,3 +1,14 @@
+# Cinje
+
+**Cinje** is a modern C injection template for Pokémon FireRed ROMs. It's designed to minimize development friction and improve reliability, so developers can focus on writing code without having to deal with nonsense bugs.
+
+## Key Features
+
+- **Use one thing, and use it well:** entire projects can be developed by writing only C code.
+- **Rebuild what has to be rebuilt:** even the most obscure dependencies are tracked, ensuring no regeneration is needed when a target is modified.
+- **Builds as fast as development:** blazingly fast incremental builds powered by Ninja.
+- **Give me Unix and I am good to go:** Linux, MSYS2 and WSL2 are supported.
+
 ## Building
 
 First, activate the development environment by running `source devenv.sh`. While a development environment is active, you can run `deactivate` to exit from it. It's necessary to do this only once per shell session.
