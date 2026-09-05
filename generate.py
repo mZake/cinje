@@ -211,7 +211,7 @@ def main():
                     description="Building C object $out")
 
         writer.rule("as",
-                    command="$as $asflags -c $in -o $out",
+                    command="$preproc $in charmap.txt | $cc -E $cppflags - | $preproc -ie $in charmap.txt | $as $asflags -o $out",
                     depfile="$out.d",
                     description="Building ASM object $out")
 
@@ -257,7 +257,7 @@ def main():
         writer.build_group("gbagfx", bpp8_files, bpp8_lz_files, implicit_inputs="$gbagfx")
 
         writer.build_group("cc", c_sources, c_objects, implicit_inputs="$preproc")
-        writer.build_group("as", asm_sources, asm_objects)
+        writer.build_group("as", asm_sources, asm_objects, implicit_inputs="$preproc")
 
         writer.build_group("scaninc", c_sources, c_depfiles, implicit_inputs="$scaninc")
         writer.build_group("scaninc", asm_sources, asm_depfiles, implicit_inputs="$scaninc")
