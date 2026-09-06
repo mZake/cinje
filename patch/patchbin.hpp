@@ -130,6 +130,9 @@ namespace elf
     constexpr int ET_DYN = 3;
     constexpr int ET_CORE = 4;
 
+    constexpr int EM_NONE = 0x0;
+    constexpr int EM_ARM = 0x28;
+
     constexpr int SHN_UNDEF = 0;
     constexpr int SHN_LORESERVE = 0xFF00;
     constexpr int SHN_LOPROC = 0xFF00;
@@ -166,6 +169,7 @@ namespace elf
         Success,
         InvalidByteOrder,
         InvalidClass,
+        InvalidMachine,
         InvalidObject,
         InvalidType,
     };
@@ -518,7 +522,22 @@ namespace elf
             return ParseStatus::InvalidType;
         }
 
+        if (object.elf_header.e_machine != EM_ARM)
+        {
+            return ParseStatus::InvalidMachine;
+        }
+
+        if (object.elf_header.e_version != EV_CURRENT)
+        {
+            return ParseStatus::InvalidObject;
+        }
+
         if (object.elf_header.e_shoff == 0)
+        {
+            return ParseStatus::InvalidObject;
+        }
+
+        if (object.elf_header.e_shnum == 0)
         {
             return ParseStatus::InvalidObject;
         }
@@ -690,6 +709,10 @@ namespace elf
             case ParseStatus::InvalidClass:
             {
                 return "object class is not 32-bit";
+            }
+            case ParseStatus::InvalidMachine:
+            {
+                return "object architecture is not Arm";
             }
             case ParseStatus::InvalidObject:
             {
