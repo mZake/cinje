@@ -773,8 +773,10 @@ void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t
 
     uint8_t register_bits = register_id & 7;
 
+    offset &= ~1;
+
     BufferBuilder builder;
-    if (address % 4)
+    if (offset % 4)
     {
         builder.write_byte(0x01);
         builder.write_byte(0x48 | register_bits);
@@ -790,7 +792,7 @@ void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t
     }
     builder.write_little_uint32(address | 1);
 
-    patch_bytes_at(location, offset & ~1, builder.buffer);
+    patch_bytes_at(location, offset, builder.buffer);
 }
 
 void patch_function_at(Location location, uint32_t offset, const char* name,
