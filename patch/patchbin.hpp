@@ -6,9 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <initializer_list>
-#include <optional>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -37,12 +35,10 @@
 
 #define LOCATION            Location{__FILE__, __LINE__}
 
-#define PATCH_POINTER(...)  patch_pointer_at(LOCATION, __VA_ARGS__)
 #define PATCH_BYTES(...)    patch_bytes_at(LOCATION, __VA_ARGS__)
+#define PATCH_POINTER(...)  patch_pointer_at(LOCATION, __VA_ARGS__)
 #define PATCH_HOOK(...)     patch_hook_at(LOCATION, __VA_ARGS__)
 #define PATCH_FUNC(...)     patch_function_at(LOCATION, __VA_ARGS__)
-
-namespace fs = std::filesystem;
 
 class BufferParser
 {
@@ -238,35 +234,25 @@ namespace elf
     std::vector<uint8_t> read_image_data(const Elf32_Object& object);
 }
 
-struct Patch
-{
-    std::vector<uint8_t> bytes;
-    uint32_t offset = 0;
-};
-
 struct Location
 {
     const char* file = nullptr;
     int line = 0;
 };
 
-using SymbolAddressMap = std::unordered_map<std::string_view, uint32_t>;
-
 struct Patcher
 {
-    const char* input_binary = nullptr;
-    const char* output_binary = nullptr;
-    size_t binary_size = 0;
-    SymbolAddressMap symbol_address_map;
-    std::vector<Patch> patches;
+    std::vector<uint8_t> image_data;
+    elf::Elf32_Object elf_object;
+    elf::Elf32_SymbolTable elf_symbol_table;
     bool has_error = false;
 };
 
-void begin_patching(const char* input_binary, const char* output_binary, const elf::Elf32_Object& elf);
-void end_patching();
+void begin_patching(const char* binary_path, const char* elf_path);
+void end_patching(const char* output_path);
 
+void patch_bytes_at(Location location, uint32_t offset, const std::vector<uint8_t>& bytes);
 void patch_pointer_at(Location location, uint32_t offset, const char* name, bool set_thumb_bit);
-void patch_bytes_at(Location location, uint32_t offset, std::vector<uint8_t> bytes);
 void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t register_id);
 void patch_function_at(Location location, uint32_t offset, const char* name,
                        uint32_t param_count, uint8_t returns);
@@ -315,6 +301,18 @@ static std::vector<uint8_t> read_entire_file(const char* filepath)
         log_fatal("cannot read file: %s", filepath);
 
     return buffer;
+}
+
+static void write_entire_file(const char* filepath, const std::vector<uint8_t>& buffer)
+{
+    std::FILE* stream = std::fopen(filepath, "wb");
+    if (!stream)
+    {
+        log_fatal("cannot open file: %s", filepath);
+    }
+
+    std::fwrite(buffer.data(), 1, buffer.size(), stream);
+    std::fclose(stream);
 }
 
 static uint32_t to_offset(uint32_t address)
@@ -686,152 +684,81 @@ static void patch_error(Location location, const char* format, ...)
     s_patcher.has_error = true;
 }
 
-static std::optional<uint32_t> find_symbol(const SymbolAddressMap& address_map, std::string_view name)
+void begin_patching(const char* binary_path, const char* elf_path)
 {
-    if (auto it = address_map.find(name); it != address_map.end())
+    Patcher patcher;
+    patcher.image_data = read_entire_file(binary_path);
+    patcher.elf_object = elf::read_elf_object(elf_path);
+    patcher.elf_symbol_table = elf::read_symbol_table(patcher.elf_object);
+
+    auto elf_image_data = elf::read_image_data(patcher.elf_object);
+
+    auto blob_begin = elf::get_symbol(patcher.elf_symbol_table, "BLOB_BEGIN");
+    uint32_t image_begin_offset = elf::resolve_symbol(patcher.elf_object, blob_begin);
+    image_begin_offset = to_offset(image_begin_offset);
+
+    uint32_t image_end_offset = image_begin_offset + elf_image_data.size();
+    if (image_end_offset >= patcher.image_data.size())
     {
-        return it->second;
-    }
-
-    return std::nullopt;
-}
-
-void begin_patching(const char* input_binary, const char* output_binary, const elf::Elf32_Object& elf)
-{
-    Patcher p;
-    p.input_binary = input_binary;
-    p.output_binary = output_binary;
-
-    std::error_code ec;
-    p.binary_size = fs::file_size(input_binary, ec);
-
-    elf::Elf32_SymbolTable symbol_table = elf::read_symbol_table(elf);
-
-    elf::Elf32_Sym blob_begin = elf::get_symbol(symbol_table, "BLOB_BEGIN");
-    uint32_t blob_offset = to_offset(elf::resolve_symbol(elf, blob_begin));
-
-    for (const auto& [name, index] : symbol_table.symbol_index_map)
-    {
-        elf::Elf32_Sym symbol = elf::get_symbol(symbol_table, index);
-
-        uint32_t st_type = ELF32_ST_TYPE(symbol.st_info);
-        if (st_type == elf::STT_SECTION || st_type == elf::STT_FILE)
-        {
-            continue;
-        }
-
-        if (symbol.st_shndx == elf::SHN_UNDEF || symbol.st_shndx == elf::SHN_COMMON)
-        {
-            continue;
-        }
-
-        p.symbol_address_map[name] = elf::resolve_symbol(elf, symbol);
-    }
-
-    auto blob_bytes = elf::read_image_data(elf);
-
-    Patch blob_patch{std::move(blob_bytes), blob_offset};
-    p.patches.push_back(std::move(blob_patch));
-
-    uint32_t end_offset = blob_offset + blob_bytes.size();
-    if (end_offset >= p.binary_size)
-    {
-        size_t overflow = end_offset - p.binary_size;
+        size_t overflow = image_end_offset - patcher.image_data.size();
         log_fatal("blob overflows binary by 0x%zX bytes", overflow);
     }
 
-    s_patcher = std::move(p);
+    std::memcpy(patcher.image_data.data() + image_begin_offset,
+                elf_image_data.data(), elf_image_data.size());
+
+    s_patcher = std::move(patcher);
 }
 
-void end_patching()
+void end_patching(const char* output_file)
 {
-    auto& p = s_patcher;
-    if (p.has_error)
+    if (s_patcher.has_error)
     {
         std::exit(EXIT_FAILURE);
     }
 
-    std::error_code ec; // Tag to force use of non-throwing overload
-    if (!fs::copy_file(p.input_binary, p.output_binary, fs::copy_options::overwrite_existing, ec))
-    {
-        log_fatal("cannot copy %s to %s", p.input_binary, p.output_binary);
-    }
-
-    std::FILE* stream = std::fopen(p.output_binary, "r+b");
-    if (!stream)
-    {
-        log_fatal("cannot open file: %s", p.output_binary);
-    }
-
-    for (const auto& patch : p.patches)
-    {
-        if (std::fseek(stream, patch.offset, SEEK_SET) != 0)
-        {
-            log_fatal("failed to seek file: %s", p.output_binary);
-        }
-
-        if (std::fwrite(patch.bytes.data(), 1, patch.bytes.size(), stream) != patch.bytes.size())
-        {
-            log_fatal("failed to write file: %s", p.output_binary);
-        }
-    }
+    write_entire_file(output_file, s_patcher.image_data);
 
     s_patcher = {};
 }
 
+void patch_bytes_at(Location location, uint32_t offset, const std::vector<uint8_t>& bytes)
+{
+    uint32_t patch_end_offset = offset + bytes.size();
+    if (patch_end_offset >= s_patcher.image_data.size())
+    {
+        size_t count = patch_end_offset - s_patcher.image_data.size();
+        patch_error(location, "operation overflows binary by 0x%zX bytes", count);
+        return;
+    }
+
+    std::memcpy(s_patcher.image_data.data() + offset, bytes.data(), bytes.size());
+}
+
 void patch_pointer_at(Location location, uint32_t offset, const char* name, bool set_thumb_bit)
 {
-    auto& p = s_patcher;
+    auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
 
-    auto address = find_symbol(p.symbol_address_map, name);
+    uint32_t address = elf::resolve_symbol(s_patcher.elf_object, symbol);
     if (!address)
     {
         patch_error(location, "symbol not found: %s", name);
         return;
     }
  
-    *address = set_thumb_bit ? (*address | 1) : (*address & ~1);
+    address = set_thumb_bit ? (address | 1) : (address & ~1);
 
     BufferBuilder builder;
-    builder.write_little_uint32(*address);
+    builder.write_little_uint32(address);
 
-    uint32_t end_offset = offset + builder.buffer.size();
-    if (end_offset >= p.binary_size)
-    {
-        size_t count = end_offset - p.binary_size;
-        patch_error(location, "operation overflows %s by 0x%zX bytes", p.input_binary, count);
-        return;
-    }
-
-    Patch patch;
-    patch.offset = offset;
-    patch.bytes = std::move(builder.buffer);
-    p.patches.push_back(std::move(patch));
-}
-
-void patch_bytes_at(Location location, uint32_t offset, std::vector<uint8_t> bytes)
-{
-    auto& p = s_patcher;
-
-    uint32_t end_offset = offset + bytes.size();
-    if (end_offset >= p.binary_size)
-    {
-        size_t count = end_offset - p.binary_size;
-        patch_error(location, "operation overflows %s by 0x%zX bytes", p.input_binary, count);
-        return;
-    }
-
-    Patch patch;
-    patch.offset = offset;
-    patch.bytes = std::move(bytes);
-    p.patches.push_back(std::move(patch));
+    patch_bytes_at(location, offset, builder.buffer);
 }
 
 void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t register_id)
 {
-    auto& p = s_patcher;
+    auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
 
-    auto address = find_symbol(p.symbol_address_map, name);
+    uint32_t address = elf::resolve_symbol(s_patcher.elf_object, symbol);
     if (!address)
     {
         patch_error(location, "symbol not found: %s", name);
@@ -847,7 +774,7 @@ void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t
     uint8_t register_bits = register_id & 7;
 
     BufferBuilder builder;
-    if (*address % 4)
+    if (address % 4)
     {
         builder.write_byte(0x01);
         builder.write_byte(0x48 | register_bits);
@@ -861,28 +788,17 @@ void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t
         builder.write_byte(0x00 | (register_bits << 3));
         builder.write_byte(0x47);
     }
-    builder.write_little_uint32(*address | 1);
+    builder.write_little_uint32(address | 1);
 
-    uint32_t end_offset = offset + builder.buffer.size();
-    if (end_offset >= p.binary_size)
-    {
-        size_t count = end_offset - p.binary_size;
-        patch_error(location, "operation overflows %s by 0x%zX bytes", p.input_binary, count);
-        return;
-    }
-
-    Patch patch;
-    patch.bytes = std::move(builder.buffer);
-    patch.offset = offset & ~1; // Ensure offset alignment is 2
-    p.patches.push_back(std::move(patch));
+    patch_bytes_at(location, offset & ~1, builder.buffer);
 }
 
 void patch_function_at(Location location, uint32_t offset, const char* name,
                        uint32_t param_count, uint8_t returns)
 {
-    auto& p = s_patcher;
+    auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
 
-    auto address = find_symbol(p.symbol_address_map, name);
+    uint32_t address = elf::resolve_symbol(s_patcher.elf_object, symbol);
     if (!address)
     {
         patch_error(location, "symbol not found: %s", name);
@@ -901,20 +817,9 @@ void patch_function_at(Location location, uint32_t offset, const char* name,
     builder.write_byte(0xBC);
     builder.write_byte(returns << 3);
     builder.write_bytes({0x47, 0x20, 0x47});
-    builder.write_little_uint32(*address | 1);
+    builder.write_little_uint32(address | 1);
 
-    uint32_t end_offset = offset + builder.buffer.size();
-    if (end_offset >= p.binary_size)
-    {
-        size_t count = end_offset - p.binary_size;
-        patch_error(location, "operation overflows %s by 0x%zX bytes", p.input_binary, count);
-        return;
-    }
-
-    Patch patch;
-    patch.offset = offset;
-    patch.bytes = std::move(builder.buffer);
-    p.patches.push_back(std::move(patch));
+    patch_bytes_at(location, offset, builder.buffer);
 }
 
 extern void patchbin_main();
@@ -947,11 +852,9 @@ int main(int argc, char** argv)
 {
     ParsedArgs args = parse_args(argc, argv);
 
-    elf::Elf32_Object elf = elf::read_elf_object(args.elf_object_path);
-
-    begin_patching(args.input_binary_path, args.output_binary_path, elf);
+    begin_patching(args.input_binary_path, args.elf_object_path);
     patchbin_main();
-    end_patching();
+    end_patching(args.output_binary_path);
 }
 
 #endif
