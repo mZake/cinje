@@ -161,6 +161,15 @@ namespace elf
     constexpr int STT_SECTION = 3;
     constexpr int STT_FILE = 4;
 
+    enum class ParseStatus
+    {
+        Success,
+        InvalidByteOrder,
+        InvalidClass,
+        InvalidObject,
+        InvalidType,
+    };
+
     struct Elf32_Ehdr
     {
         unsigned char e_ident[EI_NIDENT] = {0};
@@ -217,7 +226,7 @@ namespace elf
         std::unordered_map<std::string_view, size_t> symbol_index_map;
     };
 
-    Elf32_Object read_elf_object(const char* filepath);
+    ParseStatus read_elf_object(const char* filepath, Elf32_Object& object);
 
     std::string_view get_string(const Elf32_Object& object, size_t section_index, uint32_t offset);
 
@@ -230,6 +239,8 @@ namespace elf
     Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, std::string_view name);
 
     std::vector<uint8_t> read_image_data(const Elf32_Object& object);
+
+    const char* get_parse_status_context(ParseStatus status);
 }
 
 struct Location
@@ -457,7 +468,7 @@ void BufferBuilder::write_little_uint64(uint64_t value)
 
 namespace elf
 {
-    Elf32_Object read_elf_object(const char* filepath)
+    ParseStatus read_elf_object(const char* filepath, Elf32_Object& out_object)
     {
         Elf32_Object object;
 
@@ -470,22 +481,22 @@ namespace elf
             object.elf_header.e_ident[EI_MAG2] != ELFMAG2 ||
             object.elf_header.e_ident[EI_MAG3] != ELFMAG3)
         {
-            log_fatal("file is not an ELF object: %s", filepath);
+            return ParseStatus::InvalidObject;
         }
 
         if (object.elf_header.e_ident[EI_CLASS] != ELFCLASS32)
         {
-            log_fatal("ELF is not 32-bit: %s", filepath);
+            return ParseStatus::InvalidClass;
         }
 
         if (object.elf_header.e_ident[EI_DATA] != ELFDATA2LSB)
         {
-            log_fatal("ELF is not LSB: %s", filepath);
+            return ParseStatus::InvalidByteOrder;
         }
 
         if (object.elf_header.e_ident[EI_VERSION] != EV_CURRENT)
         {
-            log_fatal("ELF version is invalid: %s", filepath);
+            return ParseStatus::InvalidObject;
         }
 
         parser.read_little_uint16(object.elf_header.e_type);
@@ -504,12 +515,12 @@ namespace elf
 
         if (object.elf_header.e_type != ET_EXEC)
         {
-            log_fatal("ELF is not an executable: %s", filepath);
+            return ParseStatus::InvalidType;
         }
 
         if (object.elf_header.e_shoff == 0)
         {
-            log_fatal("ELF does not contain a section header table: %s", filepath);
+            return ParseStatus::InvalidObject;
         }
 
         parser.seek(object.elf_header.e_shoff);
@@ -537,7 +548,9 @@ namespace elf
             object.section_index_map[name] = i;
         }
 
-        return object;
+        out_object = std::move(object);
+
+        return ParseStatus::Success;
     }
 
     std::string_view get_string(const Elf32_Object& object, size_t section_index, uint32_t offset)
@@ -661,6 +674,35 @@ namespace elf
 
         return builder.buffer;
     }
+
+    const char* get_parse_status_context(ParseStatus status)
+    {
+        switch (status)
+        {
+            case ParseStatus::Success:
+            {
+                break;
+            }
+            case ParseStatus::InvalidByteOrder:
+            {
+                return "object byte-order is not little-endian";
+            }
+            case ParseStatus::InvalidClass:
+            {
+                return "object class is not 32-bit";
+            }
+            case ParseStatus::InvalidObject:
+            {
+                return "invalid ELF object";
+            }
+            case ParseStatus::InvalidType:
+            {
+                return "object is not an executable";
+            }
+        }
+
+        return "no context given";
+    }
 }
 
 static void patch_error(Location location, const char* format, ...)
@@ -678,10 +720,15 @@ static void patch_error(Location location, const char* format, ...)
 
 void begin_patching(const char* binary_path, const char* elf_path)
 {
-
     Patcher patcher;
     patcher.image_data = read_entire_file(binary_path);
-    patcher.elf_object = elf::read_elf_object(elf_path);
+
+    if (auto parse_status = elf::read_elf_object(elf_path, patcher.elf_object);
+        parse_status != elf::ParseStatus::Success)
+    {
+        log_fatal("%s: %s", elf_path, elf::get_parse_status_context(parse_status));
+    }
+
     patcher.elf_symbol_table = elf::read_symbol_table(patcher.elf_object);
 
     auto elf_image_data = elf::read_image_data(patcher.elf_object);
