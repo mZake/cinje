@@ -287,16 +287,23 @@ static std::vector<uint8_t> read_entire_file(const char* filepath)
 {
     std::FILE* stream = std::fopen(filepath, "rb");
     if (!stream)
-        log_fatal("cannot open file: %s", filepath);
+    {
+        log_fatal("cannot open file for reading: %s", filepath);
+    }
 
     std::fseek(stream, 0, SEEK_END);
     long size = std::ftell(stream);
     std::fseek(stream, 0, SEEK_SET);
 
     std::vector<uint8_t> buffer;
-    buffer.resize(size);
+    buffer.resize(static_cast<size_t>(size));
+
     if (std::fread(buffer.data(), 1, buffer.size(), stream) != buffer.size())
+    {
         log_fatal("cannot read file: %s", filepath);
+    }
+
+    std::fclose(stream);
 
     return buffer;
 }
@@ -306,10 +313,14 @@ static void write_entire_file(const char* filepath, const std::vector<uint8_t>& 
     std::FILE* stream = std::fopen(filepath, "wb");
     if (!stream)
     {
-        log_fatal("cannot open file: %s", filepath);
+        log_fatal("cannot open file for writing: %s", filepath);
     }
 
-    std::fwrite(buffer.data(), 1, buffer.size(), stream);
+    if (std::fwrite(buffer.data(), 1, buffer.size(), stream) != buffer.size())
+    {
+        log_fatal("cannot write file: %s", filepath);
+    }
+
     std::fclose(stream);
 }
 
