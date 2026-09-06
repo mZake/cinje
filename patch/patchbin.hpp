@@ -229,8 +229,6 @@ namespace elf
     Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, size_t index);
     Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, std::string_view name);
 
-    uint32_t resolve_symbol(const Elf32_Object& object, const Elf32_Sym& symbol);
-
     std::vector<uint8_t> read_image_data(const Elf32_Object& object);
 }
 
@@ -604,11 +602,6 @@ namespace elf
         return {};
     }
 
-    uint32_t resolve_symbol(const Elf32_Object&, const Elf32_Sym& symbol)
-    {
-        return symbol.st_value;
-    }
-
     std::vector<uint8_t> read_image_data(const Elf32_Object& object)
     {
         // Collect all sections whose type is SHF_ALLOC
@@ -674,6 +667,7 @@ static void patch_error(Location location, const char* format, ...)
 
 void begin_patching(const char* binary_path, const char* elf_path)
 {
+
     Patcher patcher;
     patcher.image_data = read_entire_file(binary_path);
     patcher.elf_object = elf::read_elf_object(elf_path);
@@ -682,7 +676,7 @@ void begin_patching(const char* binary_path, const char* elf_path)
     auto elf_image_data = elf::read_image_data(patcher.elf_object);
 
     auto blob_begin = elf::get_symbol(patcher.elf_symbol_table, "BLOB_BEGIN");
-    uint32_t image_begin_offset = elf::resolve_symbol(patcher.elf_object, blob_begin);
+    uint32_t image_begin_offset = blob_begin.st_value;
     image_begin_offset = to_offset(image_begin_offset);
 
     uint32_t image_end_offset = image_begin_offset + elf_image_data.size();
@@ -727,7 +721,7 @@ void patch_pointer_at(Location location, uint32_t offset, const char* name, bool
 {
     auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
 
-    uint32_t address = elf::resolve_symbol(s_patcher.elf_object, symbol);
+    uint32_t address = symbol.st_value;
     if (!address)
     {
         patch_error(location, "symbol not found: %s", name);
@@ -746,7 +740,7 @@ void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t
 {
     auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
 
-    uint32_t address = elf::resolve_symbol(s_patcher.elf_object, symbol);
+    uint32_t address = symbol.st_value;
     if (!address)
     {
         patch_error(location, "symbol not found: %s", name);
@@ -788,7 +782,7 @@ void patch_function_at(Location location, uint32_t offset, const char* name,
 {
     auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
 
-    uint32_t address = elf::resolve_symbol(s_patcher.elf_object, symbol);
+    uint32_t address = symbol.st_value;
     if (!address)
     {
         patch_error(location, "symbol not found: %s", name);
