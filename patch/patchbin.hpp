@@ -604,21 +604,9 @@ namespace elf
         return {};
     }
 
-    uint32_t resolve_symbol(const Elf32_Object& object, const Elf32_Sym& symbol)
+    uint32_t resolve_symbol(const Elf32_Object&, const Elf32_Sym& symbol)
     {
-        if (symbol.st_shndx == SHN_UNDEF)
-        {
-            return 0;
-        }
-
-        if (symbol.st_shndx == SHN_ABS)
-        {
-            return symbol.st_value;
-        }
-
-        Elf32_Shdr section = get_section(object, symbol.st_shndx);
-        uint32_t result = section.sh_offset + symbol.st_value;
-        return result;
+        return symbol.st_value;
     }
 
     std::vector<uint8_t> read_image_data(const Elf32_Object& object)
