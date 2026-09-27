@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 from io import BufferedWriter
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 # Change this if needed
 OFFSET_TO_INSERT = 0x1400000
@@ -86,7 +86,7 @@ class Writer:
         implicit_inputs: Optional[Union[List[str], str]] = None,
         implicit_outputs: Optional[Union[List[str], str]] = None,
         order_only_deps: Optional[Union[List[str], str]] = None,
-        **kwargs,
+        variables: Optional[Dict[str, str]] = None,
     ):
         all_inputs = as_list(inputs)
         if implicit_inputs is not None:
@@ -105,7 +105,7 @@ class Writer:
         outputs_text = " ".join(as_list(all_outputs))
 
         self._line(f"build {outputs_text}: {rule} {inputs_text}")
-        for key, value in kwargs.items():
+        for key, value in variables.items():
             self._line(f"{key} = {value}", indent=2)
 
         self.newline()
@@ -150,9 +150,13 @@ def build_gfx(
     outputs: Union[List[str], str]
 ):
     for input, output in zip(inputs, outputs):
-        writer.build("gbagfx", input, output,
-                     implicit_inputs=GBAGFX,
-                     GBAGFX=GBAGFX)
+        writer.build(
+            "gbagfx",
+            inputs=input,
+            outputs=output,
+            implicit_inputs=GBAGFX,
+            variables={"GBAGFX": GBAGFX},
+        )
 
 def build_c(
     writer: Writer,
@@ -161,13 +165,19 @@ def build_c(
     depfiles: Union[List[str], str]
 ):
     for input, output, depfile in zip(inputs, outputs, depfiles):
-        writer.build("target_cc", input, output,
-                     implicit_inputs=PREPROC,
-                     CC=TARGET_CC,
-                     PREPROC=PREPROC,
-                     CFLAGS=CFLAGS,
-                     CPPFLAGS=CPPFLAGS,
-                     DEPFILE=depfile)
+        writer.build(
+            "target_cc",
+            inputs=input,
+            outputs=output,
+            implicit_inputs=PREPROC,
+            variables={
+                "CC": TARGET_CC,
+                "PREPROC": PREPROC,
+                "CFLAGS": CFLAGS,
+                "CPPFLAGS": CPPFLAGS,
+                "DEPFILE": depfile,
+            },
+        )
 
 def build_asm(
     writer: Writer,
@@ -176,14 +186,20 @@ def build_asm(
     depfiles: Union[List[str], str]
 ):
     for input, output, depfile in zip(inputs, outputs, depfiles):
-        writer.build("target_as", input, output,
-                     implicit_inputs=PREPROC,
-                     AS=TARGET_AS,
-                     CC=TARGET_CC,
-                     PREPROC=PREPROC,
-                     ASFLAGS=ASFLAGS,
-                     CPPFLAGS=CPPFLAGS,
-                     DEPFILE=depfile)
+        writer.build(
+            "target_as",
+            inputs=input,
+            outputs=output,
+            implicit_inputs=PREPROC,
+            variables={
+                "AS": TARGET_AS,
+                "CC": TARGET_CC,
+                "PREPROC": PREPROC,
+                "ASFLAGS": ASFLAGS,
+                "CPPFLAGS": CPPFLAGS,
+                "DEPFILE": depfile,
+            },
+        )
 
 def build_depfile(
     writer: Writer,
@@ -191,10 +207,16 @@ def build_depfile(
     outputs: Union[List[str], str]
 ):
     for input, output in zip(inputs, outputs):
-        writer.build("scaninc", input, output,
-                     implicit_inputs=SCANINC,
-                     SCANINC=SCANINC,
-                     INCLUDES=SCANINC_INCLUDES)
+        writer.build(
+            "scaninc",
+            inputs=input,
+            outputs=output,
+            implicit_inputs=SCANINC,
+            variables={
+                "SCANINC": SCANINC,
+                "INCLUDES": SCANINC_INCLUDES,
+            },
+        )
 
 def main():
     # Inputs
@@ -226,47 +248,69 @@ def main():
     with open(f"{PATCH_DIR}/build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
 
-        writer.build("host_cxx", patch_sources, PATCHBIN,
-                     implicit_inputs=patch_headers,
-                     CXX="g++",
-                     CXXFLAGS=f"-std=c++17 -O2 -Wall -Wextra -I{INC_DIR}")
+        writer.build(
+            "host_cxx",
+            inputs=patch_sources,
+            outputs=PATCHBIN,
+            implicit_inputs=patch_headers,
+            variables={
+                "CXX": "g++",
+                "CXXFLAGS": f"-std=c++17 -O2 -Wall -Wextra -I {INC_DIR}",
+            },
+        )
 
     with open("build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
 
-        writer.rule("target_cc",
-                    command="$CC -E $CPPFLAGS $in | $PREPROC -i $in charmap.txt | $CC $CFLAGS -xc -c - -o $out",
-                    depfile="$DEPFILE",
-                    description="Building C object $out")
+        writer.rule(
+            "target_cc",
+            command="$CC -E $CPPFLAGS $in | $PREPROC -i $in charmap.txt | $CC $CFLAGS -xc -c - -o $out",
+            depfile="$DEPFILE",
+            description="Building C object $out",
+        )
 
-        writer.rule("target_as",
-                    command="$PREPROC $in charmap.txt | $CC -E $CPPFLAGS - | $PREPROC -ie $in charmap.txt | $AS $ASFLAGS -o $out",
-                    depfile="$DEPFILE",
-                    description="Building ASM object $out")
+        writer.rule(
+            "target_as",
+            command="$PREPROC $in charmap.txt | $CC -E $CPPFLAGS - | $PREPROC -ie $in charmap.txt | $AS $ASFLAGS -o $out",
+            depfile="$DEPFILE",
+            description="Building ASM object $out",
+        )
 
-        writer.rule("target_ld",
-                    command="$LD $LDFLAGS $in -o $out",
-                    description="Linking ELF object $out")
+        writer.rule(
+            "target_ld",
+            command="$LD $LDFLAGS $in -o $out",
+            description="Linking ELF object $out",
+        )
 
-        writer.rule("host_cc",
-                    command="$CC $CFLAGS $in $LDFLAGS -o $out",
-                    description="Building C executable $out")
+        writer.rule(
+            "host_cc",
+            command="$CC $CFLAGS $in $LDFLAGS -o $out",
+            description="Building C executable $out",
+        )
 
-        writer.rule("host_cxx",
-                    command=f"$CXX $CXXFLAGS $in $LDFLAGS -o $out",
-                    description="Building C++ executable $out")
+        writer.rule(
+            "host_cxx",
+            command=f"$CXX $CXXFLAGS $in $LDFLAGS -o $out",
+            description="Building C++ executable $out",
+        )
 
-        writer.rule("gbagfx",
-                    command="$GBAGFX $in $out",
-                    description="Building graphics $out")
+        writer.rule(
+            "gbagfx",
+            command="$GBAGFX $in $out",
+            description="Building graphics $out",
+        )
 
-        writer.rule("patchbin",
-                    command="$PATCHBIN $in $out",
-                    description="Patching $out")
+        writer.rule(
+            "patchbin",
+            command="$PATCHBIN $in $out",
+            description="Patching $out",
+        )
 
-        writer.rule("scaninc",
-                    command=f"$SCANINC -M $out $INCLUDES $in",
-                    description="Building depfile $out")
+        writer.rule(
+            "scaninc",
+            command=f"$SCANINC -M $out $INCLUDES $in",
+            description="Building depfile $out",
+        )
 
         writer.subninja(f"{TOOLS_DIR}/gbagfx/build.ninja")
         writer.subninja(f"{TOOLS_DIR}/mid2agb/build.ninja")
@@ -292,12 +336,22 @@ def main():
         build_depfile(writer, asm_sources, asm_depfiles)
 
         if all_objects:
-            writer.build("target_ld", all_objects, BLOB_OBJECT,
-                         LD=TARGET_LD,
-                         LDFLAGS=LDFLAGS)
+            writer.build(
+                "target_ld",
+                inputs=all_objects,
+                outputs=BLOB_OBJECT,
+                variables={
+                    "LD": TARGET_LD,
+                    "LDFLAGS": LDFLAGS,
+                },
+            )
 
-            writer.build("patchbin", [BASE_ROM_FILE, BLOB_OBJECT], OUT_ROM_FILE,
-                         implicit_inputs=PATCHBIN,
-                         PATCHBIN=PATCHBIN)
+            writer.build(
+                "patchbin",
+                inputs=[BASE_ROM_FILE, BLOB_OBJECT],
+                outputs=OUT_ROM_FILE,
+                implicit_inputs=PATCHBIN,
+                variables={"PATCHBIN": PATCHBIN},
+            )
 
 if __name__ == "__main__": main()
