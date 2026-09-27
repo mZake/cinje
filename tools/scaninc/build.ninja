@@ -1,3 +1,4 @@
-build tools/scaninc/scaninc: host_cxx tools/scaninc/scaninc.cpp tools/scaninc/c_file.cpp tools/scaninc/asm_file.cpp tools/scaninc/source_file.cpp | tools/scaninc/scaninc.h tools/scaninc/asm_file.h tools/scaninc/c_file.h tools/scaninc/source_file.h
+build tools/scaninc/scaninc: host_cxx tools/scaninc/asm_file.cpp tools/scaninc/c_file.cpp tools/scaninc/scaninc.cpp tools/scaninc/source_file.cpp | tools/scaninc/asm_file.h tools/scaninc/c_file.h tools/scaninc/scaninc.h tools/scaninc/source_file.h
   CXX = g++
   CXXFLAGS = -Wall -Werror -std=c++11 -O2
+

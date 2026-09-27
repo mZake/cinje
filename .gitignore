@@ -3,7 +3,7 @@
 /build
 
 # Ninja
-/build.ninja
+build.ninja
 .ninja_log
 .ninja_deps
 

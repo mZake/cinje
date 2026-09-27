@@ -1,4 +1,5 @@
-build tools/gbagfx/gbagfx: host_cc tools/gbagfx/main.c tools/gbagfx/convert_png.c tools/gbagfx/gfx.c tools/gbagfx/jasc_pal.c tools/gbagfx/lz.c tools/gbagfx/rl.c tools/gbagfx/util.c tools/gbagfx/font.c tools/gbagfx/huff.c | tools/gbagfx/convert_png.h tools/gbagfx/gfx.h tools/gbagfx/global.h tools/gbagfx/jasc_pal.h tools/gbagfx/lz.h tools/gbagfx/rl.h tools/gbagfx/util.h tools/gbagfx/font.h
+build tools/gbagfx/gbagfx: host_cc tools/gbagfx/convert_png.c tools/gbagfx/font.c tools/gbagfx/gfx.c tools/gbagfx/huff.c tools/gbagfx/jasc_pal.c tools/gbagfx/lz.c tools/gbagfx/main.c tools/gbagfx/rl.c tools/gbagfx/util.c | tools/gbagfx/convert_png.h tools/gbagfx/font.h tools/gbagfx/gfx.h tools/gbagfx/global.h tools/gbagfx/huff.h tools/gbagfx/jasc_pal.h tools/gbagfx/lz.h tools/gbagfx/options.h tools/gbagfx/rl.h tools/gbagfx/util.h
   CC = gcc
   CFLAGS = -Wall -Wextra -Werror -Wno-sign-compare -std=c11 -O3 -flto -DPNG_SKIP_SETJMP_CHECK `pkg-config --cflags libpng`
   LDFLAGS = `pkg-config --libs libpng`
+

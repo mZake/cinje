@@ -86,7 +86,7 @@ class Writer:
         implicit_inputs: Optional[Union[List[str], str]] = None,
         implicit_outputs: Optional[Union[List[str], str]] = None,
         order_only_deps: Optional[Union[List[str], str]] = None,
-        variables: Optional[Dict[str, str]] = None,
+        variables: Optional[Dict[str, Optional[str]]] = None,
     ):
         all_inputs = as_list(inputs)
         if implicit_inputs is not None:
@@ -106,7 +106,8 @@ class Writer:
 
         self._line(f"build {outputs_text}: {rule} {inputs_text}")
         for key, value in variables.items():
-            self._line(f"{key} = {value}", indent=2)
+            if value is not None:
+                self._line(f"{key} = {value}", indent=2)
 
         self.newline()
 
@@ -131,8 +132,10 @@ def fatal(message: str):
     sys.stderr.write("\n")
     sys.exit(1)
 
-def collect_files(directory: str, extension: str) -> List[str]:
-    matches = glob.glob(f"{directory}/**/*{extension}", recursive=True)
+def collect_files(directory: str, extensions: Union[str, List[str]]) -> List[str]:
+    matches = []
+    for extension in as_list(extensions):
+        matches.extend(glob.glob(f"{directory}/**/*{extension}", recursive=True))
     return matches
 
 def derive_files(inputs: Union[List[str], str], pattern: str) -> List[str]:
@@ -218,6 +221,54 @@ def build_depfile(
             },
         )
 
+def build_c_project(
+    directory: str,
+    output: str,
+    cflags: Optional[str] = None,
+    ldflags: Optional[str] = None,
+):
+    sources = collect_files(directory, ".c")
+    headers = collect_files(directory, ".h")
+
+    build_file_path = os.path.join(directory, "build.ninja")
+    with open(build_file_path, "w", encoding="utf-8") as stream:
+        writer = Writer(stream)
+        writer.build(
+            "host_cc",
+            inputs=sources,
+            outputs=output,
+            implicit_inputs=headers,
+            variables={
+                "CC": HOST_CC,
+                "CFLAGS": cflags,
+                "LDFLAGS": ldflags,
+            },
+        )
+
+def build_cxx_project(
+    directory: str,
+    output: str,
+    cxxflags: Optional[str] = None,
+    ldflags: Optional[str] = None,
+):
+    sources = collect_files(directory, ".cpp")
+    headers = collect_files(directory, [".h", ".hpp"])
+
+    build_file_path = os.path.join(directory, "build.ninja")
+    with open(build_file_path, "w", encoding="utf-8") as stream:
+        writer = Writer(stream)
+        writer.build(
+            "host_cxx",
+            inputs=sources,
+            outputs=output,
+            implicit_inputs=headers,
+            variables={
+                "CXX": HOST_CXX,
+                "CXXFLAGS": cxxflags,
+                "LDFLAGS": ldflags,
+            },
+        )
+
 def main():
     # Inputs
     png_files   = collect_files(GFX_DIR, ".png")
@@ -240,24 +291,42 @@ def main():
     c_depfiles   = derive_files(c_sources,   f"{BUILD_DIR}/%.d")
     asm_depfiles = derive_files(asm_sources, f"{BUILD_DIR}/%.d")
 
-    # Patches are compiled for the host machine. They are getting placed
-    # here to avoid ambiguity.    
-    patch_sources = collect_files(PATCH_DIR, ".cpp")
-    patch_headers = collect_files(PATCH_DIR, ".hpp")
+    build_c_project(
+        "tools/gbagfx",
+        output=GBAGFX,
+        cflags="-Wall -Wextra -Werror -Wno-sign-compare -std=c11 -O3 -flto -DPNG_SKIP_SETJMP_CHECK `pkg-config --cflags libpng`",
+        ldflags="`pkg-config --libs libpng`",
+    )
 
-    with open(f"{PATCH_DIR}/build.ninja", "w", encoding="utf-8") as stream:
-        writer = Writer(stream)
+    build_cxx_project(
+        "tools/mid2agb",
+        output=MID2AGB,
+        cxxflags="-std=c++11 -O2 -Wall -Wno-switch -Werror",
+    )
 
-        writer.build(
-            "host_cxx",
-            inputs=patch_sources,
-            outputs=PATCHBIN,
-            implicit_inputs=patch_headers,
-            variables={
-                "CXX": "g++",
-                "CXXFLAGS": f"-std=c++17 -O2 -Wall -Wextra -I {INC_DIR}",
-            },
-        )
+    build_cxx_project(
+        "tools/preproc",
+        output=PREPROC,
+        cxxflags="-std=c++11 -O2 -Wall -Wno-switch -Werror",
+    )
+
+    build_cxx_project(
+        "tools/scaninc",
+        output=SCANINC,
+        cxxflags="-Wall -Werror -std=c++11 -O2",
+    )
+
+    build_cxx_project(
+        "tools/wav2agb",
+        output=WAV2AGB,
+        cxxflags="-Wall -Werror -std=c++17 -O2",
+    )
+
+    build_cxx_project(
+        "patch",
+        output=PATCHBIN,
+        cxxflags=f"-Wall -Wextra -std=c++17 -O2 -I {INC_DIR}",
+    )
 
     with open("build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
