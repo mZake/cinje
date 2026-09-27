@@ -14,6 +14,8 @@ OFFSET_TO_INSERT = 0x1400000
 BASE_ROM_FILE = "BPRE.gba"
 OUT_ROM_FILE = "BPRE_out.gba"
 
+ADDRESS_TO_INSERT = OFFSET_TO_INSERT + 0x8000000
+
 ASM_DIR = "asm"
 GFX_DIR = "graphics"
 INC_DIR = "include"
@@ -31,7 +33,20 @@ PREPROC  = f"{TOOLS_DIR}/preproc/preproc"
 SCANINC  = f"{TOOLS_DIR}/scaninc/scaninc"
 WAV2AGB  = f"{TOOLS_DIR}/wav2agb/wav2agb"
 
-ADDRESS_TO_INSERT = OFFSET_TO_INSERT + 0x8000000
+# Tools for cross-compiling ARMv4T binaries
+TARGET_CC = "arm-none-eabi-gcc"
+TARGET_AS = "arm-none-eabi-as"
+TARGET_LD = "arm-none-eabi-ld"
+
+# Tools for compiling native binaries
+HOST_CC  = "gcc"
+HOST_CXX = "g++"
+
+CFLAGS   = f"-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder"
+ASFLAGS  = f"-mthumb -mthumb-interwork -march=armv4t -mcpu=arm7tdmi -meabi=gnu -I {ASM_DIR}"
+LDFLAGS  = f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}"
+CPPFLAGS = f"-I {INC_DIR}"
+SCANINC_INCLUDES = f"-I {INC_DIR} -I {ASM_DIR}"
 
 class Writer:
     def __init__(self, stream: BufferedWriter):
@@ -93,21 +108,6 @@ class Writer:
         for key, value in kwargs.items():
             self._line(f"{key} = {value}", indent=2)
 
-    def build_group(
-        self,
-        rule: str,
-        inputs: List[str],
-        outputs: List[str],
-        implicit_inputs: Optional[Union[List[str], str]] = None,
-        implicit_outputs: Optional[Union[List[str], str]] = None,
-        order_only_deps: Optional[Union[List[str], str]] = None,
-        **kwargs,
-    ):
-        if not (inputs and outputs):
-            return
-        for input, output in zip(inputs, outputs):
-            self.build(rule, input, output, implicit_inputs, implicit_outputs,
-                       order_only_deps, **kwargs)
         self.newline()
 
     def _line(self, text: str, indent: int = 0):
@@ -144,6 +144,58 @@ def derive_files(inputs: Union[List[str], str], pattern: str) -> List[str]:
 
     return outputs
 
+def build_gfx(
+    writer: Writer,
+    inputs: Union[List[str], str],
+    outputs: Union[List[str], str]
+):
+    for input, output in zip(inputs, outputs):
+        writer.build("gbagfx", input, output,
+                     implicit_inputs=GBAGFX,
+                     GBAGFX=GBAGFX)
+
+def build_c(
+    writer: Writer,
+    inputs: Union[List[str], str],
+    outputs: Union[List[str], str],
+    depfiles: Union[List[str], str]
+):
+    for input, output, depfile in zip(inputs, outputs, depfiles):
+        writer.build("target_cc", input, output,
+                     implicit_inputs=PREPROC,
+                     CC=TARGET_CC,
+                     PREPROC=PREPROC,
+                     CFLAGS=CFLAGS,
+                     CPPFLAGS=CPPFLAGS,
+                     DEPFILE=depfile)
+
+def build_asm(
+    writer: Writer,
+    inputs: Union[List[str], str],
+    outputs: Union[List[str], str],
+    depfiles: Union[List[str], str]
+):
+    for input, output, depfile in zip(inputs, outputs, depfiles):
+        writer.build("target_as", input, output,
+                     implicit_inputs=PREPROC,
+                     AS=TARGET_AS,
+                     CC=TARGET_CC,
+                     PREPROC=PREPROC,
+                     ASFLAGS=ASFLAGS,
+                     CPPFLAGS=CPPFLAGS,
+                     DEPFILE=depfile)
+
+def build_depfile(
+    writer: Writer,
+    inputs: Union[List[str], str],
+    outputs: Union[List[str], str]
+):
+    for input, output in zip(inputs, outputs):
+        writer.build("scaninc", input, output,
+                     implicit_inputs=SCANINC,
+                     SCANINC=SCANINC,
+                     INCLUDES=SCANINC_INCLUDES)
+
 def main():
     # Inputs
     png_files   = collect_files(GFX_DIR, ".png")
@@ -163,8 +215,8 @@ def main():
     asm_objects = derive_files(asm_sources, f"{BUILD_DIR}/%.o")
     all_objects = c_objects + asm_objects
 
-    c_depfiles   = derive_files(c_sources,   f"{BUILD_DIR}/%.o.d")
-    asm_depfiles = derive_files(asm_sources, f"{BUILD_DIR}/%.o.d")
+    c_depfiles   = derive_files(c_sources,   f"{BUILD_DIR}/%.d")
+    asm_depfiles = derive_files(asm_sources, f"{BUILD_DIR}/%.d")
 
     # Patches are compiled for the host machine. They are getting placed
     # here to avoid ambiguity.    
@@ -174,69 +226,46 @@ def main():
     with open(f"{PATCH_DIR}/build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
 
-        writer.variable("cxx", "g++")
-        writer.newline()
-        writer.variable("cxxflags", f"-std=c++17 -O2 -Wall -Wextra -I{INC_DIR}")
-        writer.variable("ldflags", "")
-        writer.newline()
-
-        writer.build("host_cxx",
-                     inputs=patch_sources,
+        writer.build("host_cxx", patch_sources, PATCHBIN,
                      implicit_inputs=patch_headers,
-                     outputs=PATCHBIN)
+                     CXX="g++",
+                     CXXFLAGS=f"-std=c++17 -O2 -Wall -Wextra -I{INC_DIR}")
 
     with open("build.ninja", "w", encoding="utf-8") as stream:
         writer = Writer(stream)
 
-        writer.variable("cc", "arm-none-eabi-gcc")
-        writer.variable("as", "arm-none-eabi-as")
-        writer.variable("ld", "arm-none-eabi-ld")
-        writer.newline()
-        writer.variable("gbagfx",   GBAGFX)
-        writer.variable("mid2agb",  MID2AGB)
-        writer.variable("patchbin", PATCHBIN)
-        writer.variable("preproc",  PREPROC)
-        writer.variable("scaninc",  SCANINC)
-        writer.variable("wav2agb",  WAV2AGB)
-        writer.newline()
-        writer.variable("cflags", "-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder")
-        writer.variable("asflags", f"-mthumb -mthumb-interwork -march=armv4t -mcpu=arm7tdmi -meabi=gnu -I {ASM_DIR}")
-        writer.variable("ldflags", f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}")
-        writer.variable("cppflags", f"-I {INC_DIR}")
-        writer.newline()
-
-        writer.rule("cc",
-                    command="$cc -E $cppflags $in | $preproc -i $in charmap.txt | $cc $cflags -xc -o $out -c -",
-                    depfile="$out.d",
+        writer.rule("target_cc",
+                    command="$CC -E $CPPFLAGS $in | $PREPROC -i $in charmap.txt | $CC $CFLAGS -xc -c - -o $out",
+                    depfile="$DEPFILE",
                     description="Building C object $out")
 
-        writer.rule("as",
-                    command="$preproc $in charmap.txt | $cc -E $cppflags - | $preproc -ie $in charmap.txt | $as $asflags -o $out",
-                    depfile="$out.d",
+        writer.rule("target_as",
+                    command="$PREPROC $in charmap.txt | $CC -E $CPPFLAGS - | $PREPROC -ie $in charmap.txt | $AS $ASFLAGS -o $out",
+                    depfile="$DEPFILE",
                     description="Building ASM object $out")
 
-        writer.rule("ld",
-                    command="$ld $ldflags -o $out $in",
+        writer.rule("target_ld",
+                    command="$LD $LDFLAGS $in -o $out",
                     description="Linking ELF object $out")
 
         writer.rule("host_cc",
-                    command="$cc $cflags $in $ldflags -o $out",
+                    command="$CC $CFLAGS $in $LDFLAGS -o $out",
                     description="Building C executable $out")
 
         writer.rule("host_cxx",
-                    command="$cxx $cxxflags $in $ldflags -o $out",
+                    command=f"$CXX $CXXFLAGS $in $LDFLAGS -o $out",
                     description="Building C++ executable $out")
 
         writer.rule("gbagfx",
-                    command="$gbagfx $in $out",
+                    command="$GBAGFX $in $out",
                     description="Building graphics $out")
 
         writer.rule("patchbin",
-                    command="$patchbin $in $out",
+                    command="$PATCHBIN $in $out",
                     description="Patching $out")
 
         writer.rule("scaninc",
-                    command=f"$scaninc -M $out -I {INC_DIR} -I {ASM_DIR} $in",
+                    command=f"$SCANINC -M $out $INCLUDES $in",
                     description="Building depfile $out")
 
         writer.subninja(f"{TOOLS_DIR}/gbagfx/build.ninja")
@@ -248,22 +277,27 @@ def main():
 
         writer.newline()
 
-        writer.build_group("gbagfx", png_files, bpp1_files, implicit_inputs="$gbagfx")
-        writer.build_group("gbagfx", png_files, bpp4_files, implicit_inputs="$gbagfx")
-        writer.build_group("gbagfx", png_files, bpp8_files, implicit_inputs="$gbagfx")
+        build_gfx(writer, png_files, bpp1_files)
+        build_gfx(writer, png_files, bpp4_files)
+        build_gfx(writer, png_files, bpp8_files)
 
-        writer.build_group("gbagfx", bpp1_files, bpp1_lz_files, implicit_inputs="$gbagfx")
-        writer.build_group("gbagfx", bpp4_files, bpp4_lz_files, implicit_inputs="$gbagfx")
-        writer.build_group("gbagfx", bpp8_files, bpp8_lz_files, implicit_inputs="$gbagfx")
+        build_gfx(writer, bpp1_files, bpp1_lz_files)
+        build_gfx(writer, bpp4_files, bpp4_lz_files)
+        build_gfx(writer, bpp8_files, bpp8_lz_files)
 
-        writer.build_group("cc", c_sources, c_objects, implicit_inputs="$preproc")
-        writer.build_group("as", asm_sources, asm_objects, implicit_inputs="$preproc")
+        build_c(writer, c_sources, c_objects, c_depfiles)
+        build_asm(writer, asm_sources, asm_objects, asm_depfiles)
 
-        writer.build_group("scaninc", c_sources, c_depfiles, implicit_inputs="$scaninc")
-        writer.build_group("scaninc", asm_sources, asm_depfiles, implicit_inputs="$scaninc")
+        build_depfile(writer, c_sources, c_depfiles)
+        build_depfile(writer, asm_sources, asm_depfiles)
 
         if all_objects:
-            writer.build("ld", all_objects, BLOB_OBJECT)
-            writer.build("patchbin", [BASE_ROM_FILE, BLOB_OBJECT], OUT_ROM_FILE, implicit_inputs="$patchbin")
+            writer.build("target_ld", all_objects, BLOB_OBJECT,
+                         LD=TARGET_LD,
+                         LDFLAGS=LDFLAGS)
+
+            writer.build("patchbin", [BASE_ROM_FILE, BLOB_OBJECT], OUT_ROM_FILE,
+                         implicit_inputs=PATCHBIN,
+                         PATCHBIN=PATCHBIN)
 
 if __name__ == "__main__": main()
