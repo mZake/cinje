@@ -227,20 +227,32 @@ def build_c_project(
     cflags: Optional[str] = None,
     ldflags: Optional[str] = None,
 ):
-    sources = collect_files(directory, ".c")
-    headers = collect_files(directory, ".h")
+    source_files = collect_files(directory, ".c")
+    object_files = derive_files(source_files, f"{BUILD_DIR}/%.o")
+    depfiles = derive_files(source_files, f"{BUILD_DIR}/%.d")
 
     build_file_path = os.path.join(directory, "build.ninja")
     with open(build_file_path, "w", encoding="utf-8") as stream:
         writer = Writer(stream)
+
+        for src_file, obj_file, depfile in zip(source_files, object_files, depfiles):
+            writer.build(
+                "host_cc",
+                inputs=src_file,
+                outputs=obj_file,
+                variables={
+                    "CC": HOST_CC,
+                    "CFLAGS": cflags,
+                    "DEPFILE": depfile,
+                },
+            )
+
         writer.build(
-            "host_cc",
-            inputs=sources,
+            "ld",
+            inputs=object_files,
             outputs=output,
-            implicit_inputs=headers,
             variables={
-                "CC": HOST_CC,
-                "CFLAGS": cflags,
+                "LD": HOST_CC,
                 "LDFLAGS": ldflags,
             },
         )
@@ -251,20 +263,32 @@ def build_cxx_project(
     cxxflags: Optional[str] = None,
     ldflags: Optional[str] = None,
 ):
-    sources = collect_files(directory, ".cpp")
-    headers = collect_files(directory, [".h", ".hpp"])
+    source_files = collect_files(directory, ".cpp")
+    object_files = derive_files(source_files, f"{BUILD_DIR}/%.o")
+    depfiles = derive_files(source_files, f"{BUILD_DIR}/%.d")
 
     build_file_path = os.path.join(directory, "build.ninja")
     with open(build_file_path, "w", encoding="utf-8") as stream:
         writer = Writer(stream)
+
+        for src_file, obj_file, depfile in zip(source_files, object_files, depfiles):
+            writer.build(
+                "host_cxx",
+                inputs=src_file,
+                outputs=obj_file,
+                variables={
+                    "CXX": HOST_CXX,
+                    "CXXFLAGS": cxxflags,
+                    "DEPFILE": depfile,
+                },
+            )
+
         writer.build(
-            "host_cxx",
-            inputs=sources,
+            "ld",
+            inputs=object_files,
             outputs=output,
-            implicit_inputs=headers,
             variables={
-                "CXX": HOST_CXX,
-                "CXXFLAGS": cxxflags,
+                "LD": HOST_CXX,
                 "LDFLAGS": ldflags,
             },
         )
@@ -346,21 +370,23 @@ def main():
         )
 
         writer.rule(
-            "target_ld",
-            command="$LD $LDFLAGS $in -o $out",
-            description="Linking ELF object $out",
-        )
-
-        writer.rule(
             "host_cc",
-            command="$CC $CFLAGS $in $LDFLAGS -o $out",
-            description="Building C executable $out",
+            command="$CC -MMD -MF $DEPFILE -MT $out $CFLAGS -c $in -o $out",
+            depfile="$DEPFILE",
+            description="Building C object $out",
         )
 
         writer.rule(
             "host_cxx",
-            command=f"$CXX $CXXFLAGS $in $LDFLAGS -o $out",
-            description="Building C++ executable $out",
+            command=f"$CXX -MMD -MF $DEPFILE -MT $out $CXXFLAGS -c $in -o $out",
+            depfile="$DEPFILE",
+            description="Building C++ object $out",
+        )
+
+        writer.rule(
+            "ld",
+            command="$LD $LDFLAGS $in -o $out",
+            description="Linking ELF executable $out",
         )
 
         writer.rule(
@@ -406,7 +432,7 @@ def main():
 
         if all_objects:
             writer.build(
-                "target_ld",
+                "ld",
                 inputs=all_objects,
                 outputs=BLOB_OBJECT,
                 variables={
