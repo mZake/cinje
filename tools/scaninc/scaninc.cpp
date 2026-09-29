@@ -156,7 +156,7 @@ int main(int argc, char **argv)
 
         // Print a make rule for the object file
         size_t ext_pos = make_outfile.find_last_of(".");
-        auto object_file = make_outfile.substr(0, ext_pos);
+        auto object_file = make_outfile.substr(0, ext_pos) + ".o";
         output << object_file.c_str() << ":";
         for (const std::string &path : dependencies)
         {
