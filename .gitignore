@@ -19,3 +19,5 @@ build.ninja
 
 # ROMs
 *.gba
+
+/symbols.txt

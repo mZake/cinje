@@ -37,6 +37,7 @@ WAV2AGB  = f"{TOOLS_DIR}/wav2agb/wav2agb"
 TARGET_CC = "arm-none-eabi-gcc"
 TARGET_AS = "arm-none-eabi-as"
 TARGET_LD = "arm-none-eabi-ld"
+TARGET_NM = "arm-none-eabi-nm"
 
 # Tools for compiling native binaries
 HOST_CC  = "gcc"
@@ -407,6 +408,12 @@ def main():
             description="Building depfile $out",
         )
 
+        writer.rule(
+            "nm",
+            command="$NM $in > $out",
+            description="Writing listed symbols to $out"
+        )
+
         writer.subninja(f"{TOOLS_DIR}/gbagfx/build.ninja")
         writer.subninja(f"{TOOLS_DIR}/mid2agb/build.ninja")
         writer.subninja(f"{PATCH_DIR}/build.ninja")
@@ -447,6 +454,13 @@ def main():
                 outputs=OUT_ROM_FILE,
                 implicit_inputs=PATCHBIN,
                 variables={"PATCHBIN": PATCHBIN},
+            )
+
+            writer.build(
+                "nm",
+                inputs=BLOB_OBJECT,
+                outputs="symbols.txt",
+                variables={"NM": TARGET_NM},
             )
 
 if __name__ == "__main__": main()
