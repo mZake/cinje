@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -43,47 +44,47 @@
 class BufferParser
 {
 public:
-    BufferParser(const uint8_t* begin, const uint8_t* end)
+    BufferParser(const std::uint8_t* begin, const std::uint8_t* end)
         : m_buffer_begin(begin), m_buffer_end(end), m_buffer_current(begin) {}
 
-    BufferParser(const uint8_t* begin, size_t length)
+    BufferParser(const std::uint8_t* begin, std::size_t length)
         : m_buffer_begin(begin), m_buffer_end(begin + length), m_buffer_current(begin) {}
 
-    bool read_bytes(uint8_t* output, size_t count);
-    bool read_byte(uint8_t& output);
+    bool read_bytes(std::uint8_t* output, std::size_t count);
+    bool read_byte(std::uint8_t& output);
 
-    bool read_uint16(uint16_t& output);
-    bool read_uint32(uint32_t& output);
-    bool read_uint64(uint64_t& output);
+    bool read_uint16(std::uint16_t& output);
+    bool read_uint32(std::uint32_t& output);
+    bool read_uint64(std::uint64_t& output);
 
-    bool read_little_uint16(uint16_t& output);
-    bool read_little_uint32(uint32_t& output);
-    bool read_little_uint64(uint64_t& output);
+    bool read_little_uint16(std::uint16_t& output);
+    bool read_little_uint32(std::uint32_t& output);
+    bool read_little_uint64(std::uint64_t& output);
 
-    bool seek(size_t offset);
+    bool seek(std::size_t offset);
 
 private:
-    const uint8_t* m_buffer_begin = nullptr;
-    const uint8_t* m_buffer_end = nullptr;
-    const uint8_t* m_buffer_current = nullptr;
+    const std::uint8_t* m_buffer_begin = nullptr;
+    const std::uint8_t* m_buffer_end = nullptr;
+    const std::uint8_t* m_buffer_current = nullptr;
 };
 
 struct BufferBuilder
 {
-    std::vector<uint8_t> buffer;
+    std::vector<std::uint8_t> buffer;
 
-    void write_byte(uint8_t byte);
-    void write_byte(uint8_t byte, size_t count);
-    void write_bytes(std::initializer_list<uint8_t> bytes);
-    void write_bytes(const uint8_t* bytes, size_t count);
+    void write_byte(std::uint8_t byte);
+    void write_byte(std::uint8_t byte, std::size_t count);
+    void write_bytes(std::initializer_list<std::uint8_t> bytes);
+    void write_bytes(const std::uint8_t* bytes, std::size_t count);
 
-    void write_uint16(uint16_t value);
-    void write_uint32(uint32_t value);
-    void write_uint64(uint64_t value);
+    void write_uint16(std::uint16_t value);
+    void write_uint32(std::uint32_t value);
+    void write_uint64(std::uint64_t value);
 
-    void write_little_uint16(uint16_t value);
-    void write_little_uint32(uint32_t value);
-    void write_little_uint64(uint64_t value);
+    void write_little_uint16(std::uint16_t value);
+    void write_little_uint32(std::uint32_t value);
+    void write_little_uint64(std::uint64_t value);
 };
 
 // Tiny ELF library for parsing ARM 32-bit LSB executables
@@ -92,11 +93,11 @@ namespace elf
     #define ELF32_ST_BIND(x) ((x) >> 4)
     #define ELF32_ST_TYPE(x) ((x) & 0xF)
 
-    typedef uint32_t Elf32_Addr;
-    typedef uint32_t Elf32_Off;
-    typedef int32_t Elf32_Sword;
-    typedef uint32_t Elf32_Word;
-    typedef uint16_t Elf32_Half;
+    typedef std::uint32_t Elf32_Addr;
+    typedef std::uint32_t Elf32_Off;
+    typedef std::int32_t Elf32_Sword;
+    typedef std::uint32_t Elf32_Word;
+    typedef std::uint16_t Elf32_Half;
 
     constexpr int EI_MAG0 = 0;
     constexpr int EI_MAG1 = 1;
@@ -219,30 +220,30 @@ namespace elf
     struct Elf32_Object
     {
         Elf32_Ehdr elf_header;
-        std::vector<uint8_t> file_data;
+        std::vector<std::uint8_t> file_data;
         std::vector<Elf32_Shdr> sections;
-        std::unordered_map<std::string_view, size_t> section_index_map;
+        std::unordered_map<std::string_view, std::size_t> section_index_map;
     };
 
     struct Elf32_SymbolTable
     {
         std::vector<Elf32_Sym> symbols;
-        std::unordered_map<std::string_view, size_t> symbol_index_map;
+        std::unordered_map<std::string_view, std::size_t> symbol_index_map;
     };
 
     ParseStatus read_elf_object(const char* filepath, Elf32_Object& object);
 
-    std::string_view get_string(const Elf32_Object& object, size_t section_index, uint32_t offset);
+    std::string_view get_string(const Elf32_Object& object, std::size_t section_index, std::uint32_t offset);
 
-    Elf32_Shdr get_section(const Elf32_Object& object, size_t index);
+    Elf32_Shdr get_section(const Elf32_Object& object, std::size_t index);
     Elf32_Shdr get_section(const Elf32_Object& object, std::string_view name);
 
     Elf32_SymbolTable read_symbol_table(const Elf32_Object& object);
 
-    Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, size_t index);
+    Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, std::size_t index);
     Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, std::string_view name);
 
-    std::vector<uint8_t> read_image_data(const Elf32_Object& object);
+    std::vector<std::uint8_t> read_image_data(const Elf32_Object& object);
 
     const char* get_parse_status_context(ParseStatus status);
 }
@@ -255,7 +256,7 @@ struct Location
 
 struct Patcher
 {
-    std::vector<uint8_t> image_data;
+    std::vector<std::uint8_t> image_data;
     elf::Elf32_Object elf_object;
     elf::Elf32_SymbolTable elf_symbol_table;
     bool has_error = false;
@@ -264,15 +265,22 @@ struct Patcher
 void begin_patching(const char* binary_path, const char* elf_path);
 void end_patching(const char* output_path);
 
-void patch_bytes_at(Location location, uint32_t offset, const std::vector<uint8_t>& bytes);
-void patch_pointer_at(Location location, uint32_t offset, const char* name, bool set_thumb_bit);
-void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t register_id);
-void patch_function_at(Location location, uint32_t offset, const char* name,
-                       uint32_t param_count, uint8_t returns);
+void patch_bytes_at(Location location, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
+void patch_pointer_at(Location location, std::uint32_t offset, const char* name, bool set_thumb_bit);
+void patch_hook_at(Location location, std::uint32_t offset, const char* name, std::uint8_t register_id);
+void patch_function_at(Location location, std::uint32_t offset, const char* name,
+                       std::uint32_t param_count, std::uint8_t returns);
 
 #ifdef PATCHBIN_IMPLEMENTATION
 
 static Patcher s_patcher;
+
+static void log_fatal_no_prefix(const char* format, std::va_list args);
+static void log_fatal_no_prefix(const char* format, ...);
+static void log_fatal(const char* format, ...);
+
+static std::vector<std::uint8_t> read_entire_file(const char* filepath);
+static void write_entire_file(const char* filepath, const std::uint8_t* data, std::size_t size);
 
 static void log_fatal_no_prefix(const char* format, std::va_list args)
 {
@@ -298,7 +306,7 @@ static void log_fatal(const char* format, ...)
     // No va_end because the program is terminated at this point.
 }
 
-static std::vector<uint8_t> read_entire_file(const char* filepath)
+static std::vector<std::uint8_t> read_entire_file(const char* filepath)
 {
     std::FILE* stream = std::fopen(filepath, "rb");
     if (!stream)
@@ -310,8 +318,8 @@ static std::vector<uint8_t> read_entire_file(const char* filepath)
     long size = std::ftell(stream);
     std::fseek(stream, 0, SEEK_SET);
 
-    std::vector<uint8_t> buffer;
-    buffer.resize(static_cast<size_t>(size));
+    std::vector<std::uint8_t> buffer;
+    buffer.resize(static_cast<std::size_t>(size));
 
     if (std::fread(buffer.data(), 1, buffer.size(), stream) != buffer.size())
     {
@@ -323,7 +331,7 @@ static std::vector<uint8_t> read_entire_file(const char* filepath)
     return buffer;
 }
 
-static void write_entire_file(const char* filepath, const std::vector<uint8_t>& buffer)
+static void write_entire_file(const char* filepath, const std::uint8_t* data, std::size_t size)
 {
     std::FILE* stream = std::fopen(filepath, "wb");
     if (!stream)
@@ -331,7 +339,7 @@ static void write_entire_file(const char* filepath, const std::vector<uint8_t>& 
         log_fatal("cannot open file for writing: %s", filepath);
     }
 
-    if (std::fwrite(buffer.data(), 1, buffer.size(), stream) != buffer.size())
+    if (std::fwrite(data, 1, size, stream) != size)
     {
         log_fatal("cannot write file: %s", filepath);
     }
@@ -339,12 +347,12 @@ static void write_entire_file(const char* filepath, const std::vector<uint8_t>& 
     std::fclose(stream);
 }
 
-static uint32_t to_offset(uint32_t address)
+static std::uint32_t to_offset(std::uint32_t address)
 {
     return address - 0x8000000;
 }
 
-bool BufferParser::read_bytes(uint8_t* output, size_t count)
+bool BufferParser::read_bytes(std::uint8_t* output, std::size_t count)
 {
     if (m_buffer_current >= m_buffer_end)
         return false;
@@ -353,34 +361,34 @@ bool BufferParser::read_bytes(uint8_t* output, size_t count)
     if (next_current >= m_buffer_end)
         return false;
 
-    auto bytes = reinterpret_cast<const uint8_t*>(m_buffer_current);
+    auto bytes = reinterpret_cast<const std::uint8_t*>(m_buffer_current);
     std::memcpy(output, bytes, count);
     m_buffer_current = next_current;
 
     return true;
 }
 
-bool BufferParser::read_byte(uint8_t& output)
+bool BufferParser::read_byte(std::uint8_t& output)
 {
-    return read_bytes(&output, sizeof(uint8_t));
+    return read_bytes(&output, sizeof(std::uint8_t));
 }
 
-bool BufferParser::read_uint16(uint16_t& output)
+bool BufferParser::read_uint16(std::uint16_t& output)
 {
-    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint16_t));
+    return read_bytes(reinterpret_cast<std::uint8_t*>(&output), sizeof(std::uint16_t));
 }
 
-bool BufferParser::read_uint32(uint32_t& output)
+bool BufferParser::read_uint32(std::uint32_t& output)
 {
-    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint32_t));
+    return read_bytes(reinterpret_cast<std::uint8_t*>(&output), sizeof(std::uint32_t));
 }
 
-bool BufferParser::read_uint64(uint64_t& output)
+bool BufferParser::read_uint64(std::uint64_t& output)
 {
-    return read_bytes(reinterpret_cast<uint8_t*>(&output), sizeof(uint64_t));
+    return read_bytes(reinterpret_cast<std::uint8_t*>(&output), sizeof(std::uint64_t));
 }
 
-bool BufferParser::read_little_uint16(uint16_t& output)
+bool BufferParser::read_little_uint16(std::uint16_t& output)
 {
     if (read_uint16(output)) {
         output = LITTLE_TO_HOST16(output);
@@ -390,7 +398,7 @@ bool BufferParser::read_little_uint16(uint16_t& output)
     return false;
 }
 
-bool BufferParser::read_little_uint32(uint32_t& output)
+bool BufferParser::read_little_uint32(std::uint32_t& output)
 {
     if (read_uint32(output)) {
         output = LITTLE_TO_HOST32(output);
@@ -400,7 +408,7 @@ bool BufferParser::read_little_uint32(uint32_t& output)
     return false;
 }
 
-bool BufferParser::read_little_uint64(uint64_t& output)
+bool BufferParser::read_little_uint64(std::uint64_t& output)
 {
     if (read_uint64(output)) {
         output = LITTLE_TO_HOST64(output);
@@ -410,7 +418,7 @@ bool BufferParser::read_little_uint64(uint64_t& output)
     return false;
 }
 
-bool BufferParser::seek(size_t offset)
+bool BufferParser::seek(std::size_t offset)
 {
     auto next_current = m_buffer_begin + offset;
     if (next_current >= m_buffer_end)
@@ -420,52 +428,52 @@ bool BufferParser::seek(size_t offset)
     return true;
 }
 
-void BufferBuilder::write_byte(uint8_t byte)
+void BufferBuilder::write_byte(std::uint8_t byte)
 {
     buffer.push_back(byte);
 }
 
-void BufferBuilder::write_byte(uint8_t byte, size_t count)
+void BufferBuilder::write_byte(std::uint8_t byte, std::size_t count)
 {
     buffer.insert(buffer.end(), count, byte);
 }
 
-void BufferBuilder::write_bytes(std::initializer_list<uint8_t> bytes)
+void BufferBuilder::write_bytes(std::initializer_list<std::uint8_t> bytes)
 {
     buffer.insert(buffer.end(), bytes);
 }
 
-void BufferBuilder::write_bytes(const uint8_t* bytes, size_t count)
+void BufferBuilder::write_bytes(const std::uint8_t* bytes, std::size_t count)
 {
     buffer.insert(buffer.end(), bytes, bytes + count);
 }
 
-void BufferBuilder::write_uint16(uint16_t value)
+void BufferBuilder::write_uint16(std::uint16_t value)
 {
-    write_bytes(reinterpret_cast<uint8_t*>(&value), sizeof(uint16_t));
+    write_bytes(reinterpret_cast<std::uint8_t*>(&value), sizeof(std::uint16_t));
 }
 
-void BufferBuilder::write_uint32(uint32_t value)
+void BufferBuilder::write_uint32(std::uint32_t value)
 {
-    write_bytes(reinterpret_cast<uint8_t*>(&value), sizeof(uint32_t));
+    write_bytes(reinterpret_cast<std::uint8_t*>(&value), sizeof(std::uint32_t));
 }
 
-void BufferBuilder::write_uint64(uint64_t value)
+void BufferBuilder::write_uint64(std::uint64_t value)
 {
-    write_bytes(reinterpret_cast<uint8_t*>(&value), sizeof(uint64_t));
+    write_bytes(reinterpret_cast<std::uint8_t*>(&value), sizeof(std::uint64_t));
 }
 
-void BufferBuilder::write_little_uint16(uint16_t value)
+void BufferBuilder::write_little_uint16(std::uint16_t value)
 {
     write_uint16(HOST_TO_LITTLE16(value));
 }
 
-void BufferBuilder::write_little_uint32(uint32_t value)
+void BufferBuilder::write_little_uint32(std::uint32_t value)
 {
     write_uint32(HOST_TO_LITTLE32(value));
 }
 
-void BufferBuilder::write_little_uint64(uint64_t value)
+void BufferBuilder::write_little_uint64(std::uint64_t value)
 {
     write_uint64(HOST_TO_LITTLE64(value));
 }
@@ -560,7 +568,7 @@ namespace elf
         }
 
         // Map indexes here to ensure the ELF object is in a valid state
-        for (size_t i = 0; i < object.sections.size(); ++i)
+        for (std::size_t i = 0; i < object.sections.size(); ++i)
         {
             const auto& section = object.sections[i];
             auto name = get_string(object, object.elf_header.e_shstrndx, section.sh_name);
@@ -572,7 +580,7 @@ namespace elf
         return ParseStatus::Success;
     }
 
-    std::string_view get_string(const Elf32_Object& object, size_t section_index, uint32_t offset)
+    std::string_view get_string(const Elf32_Object& object, std::size_t section_index, std::uint32_t offset)
     {
         const auto& section = object.sections[section_index];
         auto data = reinterpret_cast<const char*>(object.file_data.data() + section.sh_offset);
@@ -581,7 +589,7 @@ namespace elf
         return result;
     }
 
-    Elf32_Shdr get_section(const Elf32_Object& object, size_t index)
+    Elf32_Shdr get_section(const Elf32_Object& object, std::size_t index)
     {
         return object.sections[index];
     }
@@ -606,7 +614,7 @@ namespace elf
         BufferParser parser(object.file_data.data(), object.file_data.size());
         parser.seek(section.sh_offset);
 
-        size_t symbol_count = section.sh_size / section.sh_entsize;
+        std::size_t symbol_count = section.sh_size / section.sh_entsize;
         symbol_table.symbols.resize(symbol_count);
 
         for (auto& symbol : symbol_table.symbols)
@@ -619,7 +627,7 @@ namespace elf
             parser.read_little_uint16(symbol.st_shndx);
         }
 
-        for (size_t i = 0; i < symbol_table.symbols.size(); ++i)
+        for (std::size_t i = 0; i < symbol_table.symbols.size(); ++i)
         {
             const auto& symbol = symbol_table.symbols[i];
             auto name = get_string(object, section.sh_link, symbol.st_name);
@@ -629,7 +637,7 @@ namespace elf
         return symbol_table;
     }
 
-    Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, size_t index)
+    Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, std::size_t index)
     {
         return symbol_table.symbols[index];
     }
@@ -645,11 +653,11 @@ namespace elf
         return {};
     }
 
-    std::vector<uint8_t> read_image_data(const Elf32_Object& object)
+    std::vector<std::uint8_t> read_image_data(const Elf32_Object& object)
     {
         // Collect all sections whose type is SHF_ALLOC
-        std::vector<std::pair<Elf32_Shdr, size_t>> alloc_sections;
-        for (size_t i = 0; i < object.sections.size(); ++i)
+        std::vector<std::pair<Elf32_Shdr, std::size_t>> alloc_sections;
+        for (std::size_t i = 0; i < object.sections.size(); ++i)
         {
             auto& section = object.sections[i];
             if (section.sh_flags & SHF_ALLOC)
@@ -673,16 +681,16 @@ namespace elf
         for (const auto& [section, index] : alloc_sections)
         {
             // Calculate necessary padding, if it is necessary in the first place
-            uint32_t align = section.sh_addralign;
+            std::uint32_t align = section.sh_addralign;
             if (align != 0 && builder.buffer.size() % align != 0)
             {
-                uint32_t padding = align - builder.buffer.size() % align;
+                std::uint32_t padding = align - builder.buffer.size() % align;
                 builder.write_byte(0x00, padding);
             }
 
             if (section.sh_type == SHT_PROGBITS)
             {
-                const uint8_t* bytes = object.file_data.data() + section.sh_offset;
+                const std::uint8_t* bytes = object.file_data.data() + section.sh_offset;
                 builder.write_bytes(bytes, section.sh_size);
             }
             else if (section.sh_type == SHT_NOBITS)
@@ -757,13 +765,13 @@ void begin_patching(const char* binary_path, const char* elf_path)
     auto elf_image_data = elf::read_image_data(patcher.elf_object);
 
     auto blob_begin = elf::get_symbol(patcher.elf_symbol_table, "BLOB_BEGIN");
-    uint32_t image_begin_offset = blob_begin.st_value;
+    std::uint32_t image_begin_offset = blob_begin.st_value;
     image_begin_offset = to_offset(image_begin_offset);
 
-    uint32_t image_end_offset = image_begin_offset + elf_image_data.size();
+    std::uint32_t image_end_offset = image_begin_offset + elf_image_data.size();
     if (image_end_offset >= patcher.image_data.size())
     {
-        size_t overflow = image_end_offset - patcher.image_data.size();
+        std::size_t overflow = image_end_offset - patcher.image_data.size();
         log_fatal("blob overflows binary by 0x%zX bytes", overflow);
     }
 
@@ -780,17 +788,17 @@ void end_patching(const char* output_file)
         std::exit(EXIT_FAILURE);
     }
 
-    write_entire_file(output_file, s_patcher.image_data);
+    write_entire_file(output_file, s_patcher.image_data.data(), s_patcher.image_data.size());
 
     s_patcher = {};
 }
 
-void patch_bytes_at(Location location, uint32_t offset, const std::vector<uint8_t>& bytes)
+void patch_bytes_at(Location location, std::uint32_t offset, const std::vector<std::uint8_t>& bytes)
 {
-    uint32_t patch_end_offset = offset + bytes.size();
+    std::uint32_t patch_end_offset = offset + bytes.size();
     if (patch_end_offset >= s_patcher.image_data.size())
     {
-        size_t count = patch_end_offset - s_patcher.image_data.size();
+        std::size_t count = patch_end_offset - s_patcher.image_data.size();
         patch_error(location, "operation overflows binary by 0x%zX bytes", count);
         return;
     }
@@ -798,11 +806,11 @@ void patch_bytes_at(Location location, uint32_t offset, const std::vector<uint8_
     std::memcpy(s_patcher.image_data.data() + offset, bytes.data(), bytes.size());
 }
 
-void patch_pointer_at(Location location, uint32_t offset, const char* name, bool set_thumb_bit)
+void patch_pointer_at(Location location, std::uint32_t offset, const char* name, bool set_thumb_bit)
 {
     auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
 
-    uint32_t address = symbol.st_value;
+    std::uint32_t address = symbol.st_value;
     if (!address)
     {
         patch_error(location, "symbol not found: %s", name);
@@ -817,11 +825,11 @@ void patch_pointer_at(Location location, uint32_t offset, const char* name, bool
     patch_bytes_at(location, offset, builder.buffer);
 }
 
-void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t register_id)
+void patch_hook_at(Location location, std::uint32_t offset, const char* name, std::uint8_t register_id)
 {
     auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
 
-    uint32_t address = symbol.st_value;
+    std::uint32_t address = symbol.st_value;
     if (!address)
     {
         patch_error(location, "symbol not found: %s", name);
@@ -834,7 +842,7 @@ void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t
         return;
     }
 
-    uint8_t register_bits = register_id & 7;
+    std::uint8_t register_bits = register_id & 7;
 
     offset &= ~1;
 
@@ -858,12 +866,12 @@ void patch_hook_at(Location location, uint32_t offset, const char* name, uint8_t
     patch_bytes_at(location, offset, builder.buffer);
 }
 
-void patch_function_at(Location location, uint32_t offset, const char* name,
-                       uint32_t param_count, uint8_t returns)
+void patch_function_at(Location location, std::uint32_t offset, const char* name,
+                       std::uint32_t param_count, std::uint8_t returns)
 {
     auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
 
-    uint32_t address = symbol.st_value;
+    std::uint32_t address = symbol.st_value;
     if (!address)
     {
         patch_error(location, "symbol not found: %s", name);
