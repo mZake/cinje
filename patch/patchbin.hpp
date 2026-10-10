@@ -1,20 +1,19 @@
 #pragma once
 
-#include <algorithm>
-#include <cassert>
+#include <cctype>
+#include <charconv>
 #include <cstdarg>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 #include <unordered_map>
-
-#include <stdint.h>
-#include <stddef.h>
 
 // Macros for byte-order conversion
 #if defined(__linux__)
@@ -87,200 +86,45 @@ struct BufferBuilder
     void write_little_uint64(std::uint64_t value);
 };
 
-// Tiny ELF library for parsing ARM 32-bit LSB executables
-namespace elf
-{
-    #define ELF32_ST_BIND(x) ((x) >> 4)
-    #define ELF32_ST_TYPE(x) ((x) & 0xF)
-
-    typedef std::uint32_t Elf32_Addr;
-    typedef std::uint32_t Elf32_Off;
-    typedef std::int32_t Elf32_Sword;
-    typedef std::uint32_t Elf32_Word;
-    typedef std::uint16_t Elf32_Half;
-
-    constexpr int EI_MAG0 = 0;
-    constexpr int EI_MAG1 = 1;
-    constexpr int EI_MAG2 = 2;
-    constexpr int EI_MAG3 = 3;
-    constexpr int EI_CLASS = 4;
-    constexpr int EI_DATA = 5;
-    constexpr int EI_VERSION = 6;
-    constexpr int EI_PAD = 7;
-    constexpr int EI_NIDENT = 16;
-
-    constexpr int ELFMAG0 = 0x7F;
-    constexpr int ELFMAG1 = 'E';
-    constexpr int ELFMAG2 = 'L';
-    constexpr int ELFMAG3 = 'F';
-
-    constexpr int ELFCLASSNONE = 0;
-    constexpr int ELFCLASS32 = 1;
-    constexpr int ELFCLASS64 = 2;
-
-    constexpr int ELFDATANONE = 0;
-    constexpr int ELFDATA2LSB = 1;
-    constexpr int ELFDATA2MSB = 2;
-
-    constexpr int EV_NONE = 0;
-    constexpr int EV_CURRENT = 1;
-
-    constexpr int ET_NONE = 0;
-    constexpr int ET_REL = 1;
-    constexpr int ET_EXEC = 2;
-    constexpr int ET_DYN = 3;
-    constexpr int ET_CORE = 4;
-
-    constexpr int EM_NONE = 0x0;
-    constexpr int EM_ARM = 0x28;
-
-    constexpr int SHN_UNDEF = 0;
-    constexpr int SHN_LORESERVE = 0xFF00;
-    constexpr int SHN_LOPROC = 0xFF00;
-    constexpr int SHN_HIPROC = 0xFF1F;
-    constexpr int SHN_ABS = 0xFFF1;
-    constexpr int SHN_COMMON = 0xFFF2;
-    constexpr int SHN_HIRESERVE = 0xFFFF;
-
-    constexpr int SHF_WRITE = 0x1;
-    constexpr int SHF_ALLOC = 0x2;
-    constexpr int SHF_EXECINSTR = 0x4;
-
-    constexpr int SHT_NULL = 0;
-    constexpr int SHT_PROGBITS = 1;
-    constexpr int SHT_SYMTAB = 2;
-    constexpr int SHT_STRTAB = 3;
-    constexpr int SHT_RELA = 4;
-    constexpr int SHT_HASH = 5;
-    constexpr int SHT_DYNAMIC = 6;
-    constexpr int SHT_NOTE = 7;
-    constexpr int SHT_NOBITS = 8;
-    constexpr int SHT_REL = 9;
-    constexpr int SHT_SHLIB = 10;
-    constexpr int SHT_DYNSYM = 11;
-
-    constexpr int STT_NOTYPE = 0;
-    constexpr int STT_OBJECT = 1;
-    constexpr int STT_FUNC = 2;
-    constexpr int STT_SECTION = 3;
-    constexpr int STT_FILE = 4;
-
-    enum class ParseStatus
-    {
-        Success,
-        InvalidByteOrder,
-        InvalidClass,
-        InvalidMachine,
-        InvalidObject,
-        InvalidType,
-    };
-
-    struct Elf32_Ehdr
-    {
-        unsigned char e_ident[EI_NIDENT] = {0};
-        Elf32_Half e_type = 0;
-        Elf32_Half e_machine = 0;
-        Elf32_Word e_version = 0;
-        Elf32_Addr e_entry = 0;
-        Elf32_Off e_phoff = 0;
-        Elf32_Off e_shoff = 0;
-        Elf32_Word e_flags = 0;
-        Elf32_Half e_ehsize = 0;
-        Elf32_Half e_phentsize = 0;
-        Elf32_Half e_phnum = 0;
-        Elf32_Half e_shentsize = 0;
-        Elf32_Half e_shnum = 0;
-        Elf32_Half e_shstrndx = 0;
-    };
-
-    struct Elf32_Shdr
-    {
-        Elf32_Word sh_name = 0;
-        Elf32_Word sh_type = 0;
-        Elf32_Word sh_flags = 0;
-        Elf32_Addr sh_addr = 0;
-        Elf32_Off sh_offset = 0;
-        Elf32_Word sh_size = 0;
-        Elf32_Word sh_link = 0;
-        Elf32_Word sh_info = 0;
-        Elf32_Word sh_addralign = 0;
-        Elf32_Word sh_entsize = 0;
-    };
-
-    struct Elf32_Sym
-    {
-        Elf32_Word st_name = 0;
-        Elf32_Addr st_value = 0;
-        Elf32_Word st_size = 0;
-        unsigned char st_info = 0;
-        unsigned char st_other = 0;
-        Elf32_Half st_shndx = 0;
-    };
-
-    struct Elf32_Object
-    {
-        Elf32_Ehdr elf_header;
-        std::vector<std::uint8_t> file_data;
-        std::vector<Elf32_Shdr> sections;
-        std::unordered_map<std::string_view, std::size_t> section_index_map;
-    };
-
-    struct Elf32_SymbolTable
-    {
-        std::vector<Elf32_Sym> symbols;
-        std::unordered_map<std::string_view, std::size_t> symbol_index_map;
-    };
-
-    ParseStatus read_elf_object(const char* filepath, Elf32_Object& object);
-
-    std::string_view get_string(const Elf32_Object& object, std::size_t section_index, std::uint32_t offset);
-
-    Elf32_Shdr get_section(const Elf32_Object& object, std::size_t index);
-    Elf32_Shdr get_section(const Elf32_Object& object, std::string_view name);
-
-    Elf32_SymbolTable read_symbol_table(const Elf32_Object& object);
-
-    Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, std::size_t index);
-    Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, std::string_view name);
-
-    std::vector<std::uint8_t> read_image_data(const Elf32_Object& object);
-
-    const char* get_parse_status_context(ParseStatus status);
-}
-
 struct Location
 {
     const char* file = nullptr;
     int line = 0;
 };
 
-struct Patcher
-{
-    std::vector<std::uint8_t> image_data;
-    elf::Elf32_Object elf_object;
-    elf::Elf32_SymbolTable elf_symbol_table;
-    bool has_error = false;
-};
+void patch_bytes_at(Location location, std::uint32_t offset,
+                    const std::vector<std::uint8_t>& bytes);
 
-void begin_patching(const char* binary_path, const char* elf_path);
-void end_patching(const char* output_path);
+void patch_pointer_at(Location location, std::uint32_t offset,
+                      std::string_view symbol, bool is_thumb);
 
-void patch_bytes_at(Location location, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
-void patch_pointer_at(Location location, std::uint32_t offset, const char* name, bool set_thumb_bit);
-void patch_hook_at(Location location, std::uint32_t offset, const char* name, std::uint8_t register_id);
-void patch_function_at(Location location, std::uint32_t offset, const char* name,
-                       std::uint32_t param_count, std::uint8_t returns);
+void patch_hook_at(Location location, std::uint32_t offset,
+                   std::string_view symbol, std::uint8_t reg);
+
+void patch_function_at(Location location, std::uint32_t offset,
+                       std::string_view symbol, std::uint32_t params, bool returns);
 
 #ifdef PATCHBIN_IMPLEMENTATION
 
-static Patcher s_patcher;
+static std::unordered_map<std::string, std::uint32_t> s_symbols;
+static std::vector<std::uint8_t> s_image;
 
 static void log_fatal_no_prefix(const char* format, std::va_list args);
 static void log_fatal_no_prefix(const char* format, ...);
 static void log_fatal(const char* format, ...);
 
-static std::vector<std::uint8_t> read_entire_file(const char* filepath);
-static void write_entire_file(const char* filepath, const std::uint8_t* data, std::size_t size);
+static std::vector<std::uint8_t> read_binary_file(const char* filepath);
+static std::string read_text_file(const char* filepath);
+static void write_binary_file(const char* filepath, const std::uint8_t* data, std::size_t size);
+
+static bool is_space_char(char c);
+static bool is_alpha_char(char c);
+static bool is_alnum_char(char c);
+
+static bool is_symbol_name_valid(std::string_view name);
+static std::uint32_t get_symbol_value(std::string_view name);
+
+static std::unordered_map<std::string, std::uint32_t> parse_symbol_list(const char* filepath);
 
 static void log_fatal_no_prefix(const char* format, std::va_list args)
 {
@@ -306,7 +150,7 @@ static void log_fatal(const char* format, ...)
     // No va_end because the program is terminated at this point.
 }
 
-static std::vector<std::uint8_t> read_entire_file(const char* filepath)
+static std::vector<std::uint8_t> read_binary_file(const char* filepath)
 {
     std::FILE* stream = std::fopen(filepath, "rb");
     if (!stream)
@@ -331,7 +175,32 @@ static std::vector<std::uint8_t> read_entire_file(const char* filepath)
     return buffer;
 }
 
-static void write_entire_file(const char* filepath, const std::uint8_t* data, std::size_t size)
+static std::string read_text_file(const char* filepath)
+{
+    std::FILE* stream = std::fopen(filepath, "r");
+    if (!stream)
+    {
+        log_fatal("cannot open file for reading: %s", filepath);
+    }
+
+    std::fseek(stream, 0, SEEK_END);
+    long size = std::ftell(stream);
+    std::fseek(stream, 0, SEEK_SET);
+
+    std::string text;
+    text.resize(static_cast<std::size_t>(size));
+
+    if (std::fread(text.data(), 1, text.size(), stream) != text.size())
+    {
+        log_fatal("cannot read file: %s", filepath);
+    }
+
+    std::fclose(stream);
+
+    return text;
+}
+
+static void write_binary_file(const char* filepath, const std::uint8_t* data, std::size_t size)
 {
     std::FILE* stream = std::fopen(filepath, "wb");
     if (!stream)
@@ -345,6 +214,115 @@ static void write_entire_file(const char* filepath, const std::uint8_t* data, st
     }
 
     std::fclose(stream);
+}
+
+static bool is_space_char(char c)
+{
+    return std::isspace(static_cast<unsigned char>(c));
+}
+
+static bool is_alpha_char(char c)
+{
+    return std::isalpha(static_cast<unsigned char>(c));
+}
+
+static bool is_alnum_char(char c)
+{
+    return std::isalnum(static_cast<unsigned char>(c));
+}
+
+static bool is_symbol_name_valid(std::string_view name)
+{
+    if (char c = name[0]; !is_alpha_char(c) && c != '_' && c != '.' && c != '$')
+    {
+        return false;
+    }
+
+    for (char c : name)
+    {
+        if (!is_alnum_char(c) && c != '_' && c != '.' && c != '$')
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static std::uint32_t get_symbol_value(std::string_view name)
+{
+    if (auto it = s_symbols.find(std::string(name)); it != s_symbols.end())
+    {
+        return it->second;
+    }
+
+    return 0;
+}
+
+static std::unordered_map<std::string, std::uint32_t> parse_symbol_list(const char* filepath)
+{
+    std::vector<std::string> tokens;
+
+    std::string source = read_text_file(filepath);
+    const char* c = source.data();
+
+    while (true)
+    {
+        while (*c != '\0' && is_space_char(*c))
+        {
+            ++c;
+        }
+
+        if (*c == '\0')
+        {
+            break;
+        }
+
+        std::string token;
+        while (*c != '\0' && !is_space_char(*c))
+        {
+            token += *(c++);
+        }
+
+        tokens.push_back(std::move(token));
+    }
+
+    std::unordered_map<std::string, std::uint32_t> symbols;
+
+    auto token = tokens.begin();
+    while (token != tokens.end())
+    {
+        if ((token + 2) >= tokens.end())
+        {
+            log_fatal("[%s] unexpected EOF", filepath);
+        }
+
+        auto addr_token = *(token++);
+        auto type_token = *(token++);
+        auto name_token = *(token++);
+
+        std::uint32_t address = 0;
+        auto result = std::from_chars(addr_token.data(), addr_token.data() + addr_token.size(),
+                                      address, 16);
+        if (result.ec == std::errc::invalid_argument)
+        {
+            log_fatal("[%s] invalid address: %s", filepath, addr_token.c_str());
+        }
+        if (result.ec == std::errc::result_out_of_range)
+        {
+            log_fatal("[%s] out of range address: %s", filepath, addr_token.c_str());
+        }
+
+        std::string name = std::move(name_token);
+        if (!is_symbol_name_valid(name))
+        {
+            log_fatal("[%s] invalid name: %s", filepath, name.c_str());
+        }
+
+        symbols[name] = address;
+    }
+
+    return symbols;
 }
 
 static std::uint32_t to_offset(std::uint32_t address)
@@ -478,346 +456,28 @@ void BufferBuilder::write_little_uint64(std::uint64_t value)
     write_uint64(HOST_TO_LITTLE64(value));
 }
 
-namespace elf
+void patch_bytes_at(Location location, std::uint32_t offset,
+                    const std::vector<std::uint8_t>& bytes)
 {
-    ParseStatus read_elf_object(const char* filepath, Elf32_Object& out_object)
+    std::size_t range = bytes.size() + offset;
+    if (range >= s_image.size())
     {
-        Elf32_Object object;
-
-        object.file_data = read_entire_file(filepath);
-        BufferParser parser(object.file_data.data(), object.file_data.size());
-
-        parser.read_bytes(object.elf_header.e_ident, EI_NIDENT);
-        if (object.elf_header.e_ident[EI_MAG0] != ELFMAG0 ||
-            object.elf_header.e_ident[EI_MAG1] != ELFMAG1 ||
-            object.elf_header.e_ident[EI_MAG2] != ELFMAG2 ||
-            object.elf_header.e_ident[EI_MAG3] != ELFMAG3)
-        {
-            return ParseStatus::InvalidObject;
-        }
-
-        if (object.elf_header.e_ident[EI_CLASS] != ELFCLASS32)
-        {
-            return ParseStatus::InvalidClass;
-        }
-
-        if (object.elf_header.e_ident[EI_DATA] != ELFDATA2LSB)
-        {
-            return ParseStatus::InvalidByteOrder;
-        }
-
-        if (object.elf_header.e_ident[EI_VERSION] != EV_CURRENT)
-        {
-            return ParseStatus::InvalidObject;
-        }
-
-        parser.read_little_uint16(object.elf_header.e_type);
-        parser.read_little_uint16(object.elf_header.e_machine);
-        parser.read_little_uint32(object.elf_header.e_version);
-        parser.read_little_uint32(object.elf_header.e_entry);
-        parser.read_little_uint32(object.elf_header.e_phoff);
-        parser.read_little_uint32(object.elf_header.e_shoff);
-        parser.read_little_uint32(object.elf_header.e_flags);
-        parser.read_little_uint16(object.elf_header.e_ehsize);
-        parser.read_little_uint16(object.elf_header.e_phentsize);
-        parser.read_little_uint16(object.elf_header.e_phnum);
-        parser.read_little_uint16(object.elf_header.e_shentsize);
-        parser.read_little_uint16(object.elf_header.e_shnum);
-        parser.read_little_uint16(object.elf_header.e_shstrndx);
-
-        if (object.elf_header.e_type != ET_EXEC)
-        {
-            return ParseStatus::InvalidType;
-        }
-
-        if (object.elf_header.e_machine != EM_ARM)
-        {
-            return ParseStatus::InvalidMachine;
-        }
-
-        if (object.elf_header.e_version != EV_CURRENT)
-        {
-            return ParseStatus::InvalidObject;
-        }
-
-        if (object.elf_header.e_shoff == 0)
-        {
-            return ParseStatus::InvalidObject;
-        }
-
-        if (object.elf_header.e_shnum == 0)
-        {
-            return ParseStatus::InvalidObject;
-        }
-
-        parser.seek(object.elf_header.e_shoff);
-
-        object.sections.resize(object.elf_header.e_shnum);
-        for (auto& section : object.sections)
-        {
-            parser.read_little_uint32(section.sh_name);
-            parser.read_little_uint32(section.sh_type);
-            parser.read_little_uint32(section.sh_flags);
-            parser.read_little_uint32(section.sh_addr);
-            parser.read_little_uint32(section.sh_offset);
-            parser.read_little_uint32(section.sh_size);
-            parser.read_little_uint32(section.sh_link);
-            parser.read_little_uint32(section.sh_info);
-            parser.read_little_uint32(section.sh_addralign);
-            parser.read_little_uint32(section.sh_entsize);
-        }
-
-        // Map indexes here to ensure the ELF object is in a valid state
-        for (std::size_t i = 0; i < object.sections.size(); ++i)
-        {
-            const auto& section = object.sections[i];
-            auto name = get_string(object, object.elf_header.e_shstrndx, section.sh_name);
-            object.section_index_map[name] = i;
-        }
-
-        out_object = std::move(object);
-
-        return ParseStatus::Success;
+        log_fatal("[%s:%d] patch is out of range", location.file, location.line);
     }
 
-    std::string_view get_string(const Elf32_Object& object, std::size_t section_index, std::uint32_t offset)
-    {
-        const auto& section = object.sections[section_index];
-        auto data = reinterpret_cast<const char*>(object.file_data.data() + section.sh_offset);
-
-        std::string_view result{data + offset};
-        return result;
-    }
-
-    Elf32_Shdr get_section(const Elf32_Object& object, std::size_t index)
-    {
-        return object.sections[index];
-    }
-
-    Elf32_Shdr get_section(const Elf32_Object& object, std::string_view name)
-    {
-        if (auto it = object.section_index_map.find(name);
-            it != object.section_index_map.end())
-        {
-            return get_section(object, it->second);
-        }
-
-        return {};
-    }
-
-    Elf32_SymbolTable read_symbol_table(const Elf32_Object& object)
-    {
-        Elf32_SymbolTable symbol_table;
-
-        Elf32_Shdr section = get_section(object, ".symtab");
-
-        BufferParser parser(object.file_data.data(), object.file_data.size());
-        parser.seek(section.sh_offset);
-
-        std::size_t symbol_count = section.sh_size / section.sh_entsize;
-        symbol_table.symbols.resize(symbol_count);
-
-        for (auto& symbol : symbol_table.symbols)
-        {
-            parser.read_little_uint32(symbol.st_name);
-            parser.read_little_uint32(symbol.st_value);
-            parser.read_little_uint32(symbol.st_size);
-            parser.read_byte(symbol.st_info);
-            parser.read_byte(symbol.st_other);
-            parser.read_little_uint16(symbol.st_shndx);
-        }
-
-        for (std::size_t i = 0; i < symbol_table.symbols.size(); ++i)
-        {
-            const auto& symbol = symbol_table.symbols[i];
-            auto name = get_string(object, section.sh_link, symbol.st_name);
-            symbol_table.symbol_index_map[name] = i;
-        }
-
-        return symbol_table;
-    }
-
-    Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, std::size_t index)
-    {
-        return symbol_table.symbols[index];
-    }
-
-    Elf32_Sym get_symbol(const Elf32_SymbolTable& symbol_table, std::string_view name)
-    {
-        if (auto it = symbol_table.symbol_index_map.find(name);
-            it != symbol_table.symbol_index_map.end())
-        {
-            return get_symbol(symbol_table, it->second);
-        }
-
-        return {};
-    }
-
-    std::vector<std::uint8_t> read_image_data(const Elf32_Object& object)
-    {
-        // Collect all sections whose type is SHF_ALLOC
-        std::vector<std::pair<Elf32_Shdr, std::size_t>> alloc_sections;
-        for (std::size_t i = 0; i < object.sections.size(); ++i)
-        {
-            auto& section = object.sections[i];
-            if (section.sh_flags & SHF_ALLOC)
-            {
-                alloc_sections.emplace_back(section, i);
-            }
-        }
-
-        // Sort sections by the virtual address (or index if the addresses match) in ascending order
-        std::sort(alloc_sections.begin(), alloc_sections.end(), [&](auto& lhs, auto& rhs)
-        {
-            if (lhs.first.sh_addr == rhs.first.sh_addr)
-            {
-                return lhs.second < rhs.second;
-            }
-
-            return lhs.first.sh_addr < rhs.first.sh_addr;
-        });
-
-        BufferBuilder builder;
-        for (const auto& [section, index] : alloc_sections)
-        {
-            // Calculate necessary padding, if it is necessary in the first place
-            std::uint32_t align = section.sh_addralign;
-            if (align != 0 && builder.buffer.size() % align != 0)
-            {
-                std::uint32_t padding = align - builder.buffer.size() % align;
-                builder.write_byte(0x00, padding);
-            }
-
-            if (section.sh_type == SHT_PROGBITS)
-            {
-                const std::uint8_t* bytes = object.file_data.data() + section.sh_offset;
-                builder.write_bytes(bytes, section.sh_size);
-            }
-            else if (section.sh_type == SHT_NOBITS)
-            {
-                builder.write_byte(0x00, section.sh_size);
-            }
-        }
-
-        return builder.buffer;
-    }
-
-    const char* get_parse_status_context(ParseStatus status)
-    {
-        switch (status)
-        {
-            case ParseStatus::Success:
-            {
-                break;
-            }
-            case ParseStatus::InvalidByteOrder:
-            {
-                return "object byte-order is not little-endian";
-            }
-            case ParseStatus::InvalidClass:
-            {
-                return "object class is not 32-bit";
-            }
-            case ParseStatus::InvalidMachine:
-            {
-                return "object architecture is not Arm";
-            }
-            case ParseStatus::InvalidObject:
-            {
-                return "invalid ELF object";
-            }
-            case ParseStatus::InvalidType:
-            {
-                return "object is not an executable";
-            }
-        }
-
-        return "no context given";
-    }
+    std::memcpy(s_image.data() + offset, bytes.data(), bytes.size());
 }
 
-static void patch_error(Location location, const char* format, ...)
+void patch_pointer_at(Location location, std::uint32_t offset,
+                      std::string_view symbol, bool is_thumb)
 {
-    std::va_list args;
-    va_start(args, format);
-
-    std::fprintf(stderr, "%s:%d: ", location.file, location.line);
-    std::vfprintf(stderr, format, args);
-    std::fprintf(stderr, "\n");
-
-    va_end(args);
-    s_patcher.has_error = true;
-}
-
-void begin_patching(const char* binary_path, const char* elf_path)
-{
-    Patcher patcher;
-    patcher.image_data = read_entire_file(binary_path);
-
-    if (auto parse_status = elf::read_elf_object(elf_path, patcher.elf_object);
-        parse_status != elf::ParseStatus::Success)
-    {
-        log_fatal("%s: %s", elf_path, elf::get_parse_status_context(parse_status));
-    }
-
-    patcher.elf_symbol_table = elf::read_symbol_table(patcher.elf_object);
-
-    auto elf_image_data = elf::read_image_data(patcher.elf_object);
-
-    auto blob_begin = elf::get_symbol(patcher.elf_symbol_table, "BLOB_BEGIN");
-    std::uint32_t image_begin_offset = blob_begin.st_value;
-    image_begin_offset = to_offset(image_begin_offset);
-
-    std::uint32_t image_end_offset = image_begin_offset + elf_image_data.size();
-    if (image_end_offset >= patcher.image_data.size())
-    {
-        std::size_t overflow = image_end_offset - patcher.image_data.size();
-        log_fatal("blob overflows binary by 0x%zX bytes", overflow);
-    }
-
-    std::memcpy(patcher.image_data.data() + image_begin_offset,
-                elf_image_data.data(), elf_image_data.size());
-
-    s_patcher = std::move(patcher);
-}
-
-void end_patching(const char* output_file)
-{
-    if (s_patcher.has_error)
-    {
-        std::exit(EXIT_FAILURE);
-    }
-
-    write_entire_file(output_file, s_patcher.image_data.data(), s_patcher.image_data.size());
-
-    s_patcher = {};
-}
-
-void patch_bytes_at(Location location, std::uint32_t offset, const std::vector<std::uint8_t>& bytes)
-{
-    std::uint32_t patch_end_offset = offset + bytes.size();
-    if (patch_end_offset >= s_patcher.image_data.size())
-    {
-        std::size_t count = patch_end_offset - s_patcher.image_data.size();
-        patch_error(location, "operation overflows binary by 0x%zX bytes", count);
-        return;
-    }
-
-    std::memcpy(s_patcher.image_data.data() + offset, bytes.data(), bytes.size());
-}
-
-void patch_pointer_at(Location location, std::uint32_t offset, const char* name, bool set_thumb_bit)
-{
-    auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
-
-    std::uint32_t address = symbol.st_value;
+    std::uint32_t address = get_symbol_value(symbol);
     if (!address)
     {
-        patch_error(location, "symbol not found: %s", name);
-        return;
+        log_fatal("[%s:%d] symbol not found: %s", location.file, location.line, symbol.data());
     }
  
-    address = set_thumb_bit ? (address | 1) : (address & ~1);
+    address = is_thumb ? (address | 1) : (address & ~1);
 
     BufferBuilder builder;
     builder.write_little_uint32(address);
@@ -825,40 +485,35 @@ void patch_pointer_at(Location location, std::uint32_t offset, const char* name,
     patch_bytes_at(location, offset, builder.buffer);
 }
 
-void patch_hook_at(Location location, std::uint32_t offset, const char* name, std::uint8_t register_id)
+void patch_hook_at(Location location, std::uint32_t offset,
+                   std::string_view symbol, std::uint8_t reg)
 {
-    auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
-
-    std::uint32_t address = symbol.st_value;
+    std::uint32_t address = get_symbol_value(symbol);
     if (!address)
     {
-        patch_error(location, "symbol not found: %s", name);
-        return;
+        log_fatal("[%s:%d] symbol not found: %s", location.file, location.line, symbol.data());
     }
 
-    if (register_id > 12)
+    if (reg > 15)
     {
-        patch_error(location, "register R%u is not usable", register_id);
-        return;
+        log_fatal("[%s:%d] invalid register: r%u", location.file, location.line, reg);
     }
 
-    std::uint8_t register_bits = register_id & 7;
-
-    offset &= ~1;
+    std::uint8_t reg_bits = reg & 7;
 
     BufferBuilder builder;
     if (offset % 4)
     {
         builder.write_byte(0x01);
-        builder.write_byte(0x48 | register_bits);
-        builder.write_byte(0x00 | (register_bits << 3));
+        builder.write_byte(0x48 | reg_bits);
+        builder.write_byte(0x00 | (reg_bits << 3));
         builder.write_bytes({0x47, 0x00, 0x00});
     } 
     else
     {
         builder.write_byte(0x00);
-        builder.write_byte(0x48 | register_bits);
-        builder.write_byte(0x00 | (register_bits << 3));
+        builder.write_byte(0x48 | reg_bits);
+        builder.write_byte(0x00 | (reg_bits << 3));
         builder.write_byte(0x47);
     }
     builder.write_little_uint32(address | 1);
@@ -866,22 +521,18 @@ void patch_hook_at(Location location, std::uint32_t offset, const char* name, st
     patch_bytes_at(location, offset, builder.buffer);
 }
 
-void patch_function_at(Location location, std::uint32_t offset, const char* name,
-                       std::uint32_t param_count, std::uint8_t returns)
+void patch_function_at(Location location, std::uint32_t offset,
+                       std::string_view symbol, std::uint32_t params, bool returns)
 {
-    auto symbol = elf::get_symbol(s_patcher.elf_symbol_table, name);
-
-    std::uint32_t address = symbol.st_value;
+    std::uint32_t address = get_symbol_value(symbol);
     if (!address)
     {
-        patch_error(location, "symbol not found: %s", name);
-        return;
+        log_fatal("[%s:%d] symbol not found: %s", location.file, location.line, symbol.data());
     }
 
-    if (param_count > 4)
+    if (params > 4)
     {
-        patch_error(location, "cannot rewrite function with more than 4 parameters");
-        return;
+        log_fatal("[%s:%d]: unsupported number of parameters: %u", params, location.file, location.line);
     }
 
     BufferBuilder builder;
@@ -899,25 +550,28 @@ extern void patchbin_main();
 
 struct ParsedArgs
 {
-    const char* input_binary_path = nullptr;
-    const char* elf_object_path = nullptr;
-    const char* output_binary_path = nullptr;
+    const char* base_image_path = nullptr;
+    const char* binary_path = nullptr;
+    const char* symbol_list_path = nullptr;
+    const char* output_image_path = nullptr;
 };
 
 static ParsedArgs parse_args(int argc, char** argv)
 {
-    if (argc != 4)
+    if (argc != 5)
     {
-        log_fatal_no_prefix("Usage: patchbin input-binary elf-object output-binary");
+        log_fatal_no_prefix("Usage: patchbin base-image binary symbol-list output-image");
     }
 
     // Skip executable path argument.
     ++argv;
 
     ParsedArgs args;
-    args.input_binary_path = *argv++;
-    args.elf_object_path = *argv++;
-    args.output_binary_path = *argv++;
+    args.base_image_path = *argv++;
+    args.binary_path = *argv++;
+    args.symbol_list_path = *argv++;
+    args.output_image_path = *argv++;
+
     return args;
 }
 
@@ -925,9 +579,22 @@ int main(int argc, char** argv)
 {
     ParsedArgs args = parse_args(argc, argv);
 
-    begin_patching(args.input_binary_path, args.elf_object_path);
+    s_symbols = parse_symbol_list(args.symbol_list_path);
+    s_image = read_binary_file(args.base_image_path);
+
+    std::uint32_t binary_offset = to_offset(get_symbol_value("BLOB_BEGIN"));
+    auto binary = read_binary_file(args.binary_path);
+
+    if (binary.size() + binary_offset >= s_image.size())
+    {
+        log_fatal("binary is out of range");
+    }
+
+    std::memcpy(s_image.data() + binary_offset, binary.data(), binary.size());
+
     patchbin_main();
-    end_patching(args.output_binary_path);
+
+    write_binary_file(args.output_image_path, s_image.data(), s_image.size());
 }
 
 #endif
