@@ -325,11 +325,6 @@ static std::unordered_map<std::string, std::uint32_t> parse_symbol_list(const ch
     return symbols;
 }
 
-static std::uint32_t to_offset(std::uint32_t address)
-{
-    return address - 0x8000000;
-}
-
 bool BufferParser::read_bytes(std::uint8_t* output, std::size_t count)
 {
     if (m_buffer_current >= m_buffer_end)
@@ -582,7 +577,7 @@ int main(int argc, char** argv)
     s_symbols = parse_symbol_list(args.symbol_list_path);
     s_image = read_binary_file(args.base_image_path);
 
-    std::uint32_t binary_offset = to_offset(get_symbol_value("BLOB_BEGIN"));
+    std::uint32_t binary_offset = get_symbol_value("OFFSET_TO_INSERT");
     auto binary = read_binary_file(args.binary_path);
 
     if (binary.size() + binary_offset >= s_image.size())

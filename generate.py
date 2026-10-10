@@ -10,34 +10,38 @@ from io import BufferedWriter
 from typing import Dict, List, Optional, Union
 
 # Change this if needed
-OFFSET_TO_INSERT = 0x1400000
-BASE_ROM_FILE = "BPRE.gba"
-OUT_ROM_FILE = "BPRE_out.gba"
+OFFSET_TO_INSERT = 0x900000
 
-ADDRESS_TO_INSERT = OFFSET_TO_INSERT + 0x8000000
+# Directories
+ASM_DIR     = "asm"
+GFX_DIR     = "graphics"
+INC_DIR     = "include"
+SRC_DIR     = "src"
+BUILD_DIR   = "build"
+PATCH_DIR   = "patch"
+TOOLS_DIR   = "tools"
 
-ASM_DIR = "asm"
-GFX_DIR = "graphics"
-INC_DIR = "include"
-SRC_DIR = "src"
-BUILD_DIR = "build"
-PATCH_DIR = "patch"
-TOOLS_DIR = "tools"
+# Build inputs and artifacts
+INPUT_ROM   = "BPRE.gba"
+OUTPUT_ROM  = "BPRE_out.gba"
+OUTPUT_ELF  = f"{BUILD_DIR}/BPRE.elf"
+OUTPUT_BIN  = f"{BUILD_DIR}/BPRE.bin"
+OUTPUT_SYM  = f"{BUILD_DIR}/BPRE.sym"
 
-BLOB_OBJECT = f"{BUILD_DIR}/blob.o"
-
-GBAGFX   = f"{TOOLS_DIR}/gbagfx/gbagfx"
-MID2AGB  = f"{TOOLS_DIR}/mid2agb/mid2agb"
-PATCHBIN = f"{PATCH_DIR}/patchbin"
-PREPROC  = f"{TOOLS_DIR}/preproc/preproc"
-SCANINC  = f"{TOOLS_DIR}/scaninc/scaninc"
-WAV2AGB  = f"{TOOLS_DIR}/wav2agb/wav2agb"
+# Internal tools
+GBAGFX      = f"{TOOLS_DIR}/gbagfx/gbagfx"
+MID2AGB     = f"{TOOLS_DIR}/mid2agb/mid2agb"
+PATCHBIN    = f"{PATCH_DIR}/patchbin"
+PREPROC     = f"{TOOLS_DIR}/preproc/preproc"
+SCANINC     = f"{TOOLS_DIR}/scaninc/scaninc"
+WAV2AGB     = f"{TOOLS_DIR}/wav2agb/wav2agb"
 
 # Tools for cross-compiling ARMv4T binaries
-TARGET_CC = "arm-none-eabi-gcc"
-TARGET_AS = "arm-none-eabi-as"
-TARGET_LD = "arm-none-eabi-ld"
-TARGET_NM = "arm-none-eabi-nm"
+TARGET_CC       = "arm-none-eabi-gcc"
+TARGET_AS       = "arm-none-eabi-as"
+TARGET_LD       = "arm-none-eabi-ld"
+TARGET_NM       = "arm-none-eabi-nm"
+TARGET_OBJCOPY  = "arm-none-eabi-objcopy"
 
 # Tools for compiling native binaries
 HOST_CC  = "gcc"
@@ -45,7 +49,7 @@ HOST_CXX = "g++"
 
 CFLAGS   = f"-mthumb -mthumb-interwork -march=armv4t -mtune=arm7tdmi -mabi=apcs-gnu -mlong-calls -O2 -fno-toplevel-reorder"
 ASFLAGS  = f"-mthumb -mthumb-interwork -march=armv4t -mcpu=arm7tdmi -meabi=gnu -I {ASM_DIR}"
-LDFLAGS  = f"-T linker.ld BPRE.ld --defsym=BLOB_BEGIN=0x{ADDRESS_TO_INSERT:08X}"
+LDFLAGS  = f"-T linker.ld BPRE.ld --defsym=OFFSET_TO_INSERT=0x{OFFSET_TO_INSERT:06X}"
 CPPFLAGS = f"-I {INC_DIR}"
 SCANINC_INCLUDES = f"-I {INC_DIR} -I {ASM_DIR}"
 
@@ -414,6 +418,12 @@ def main():
             description="Writing listed symbols to $out"
         )
 
+        writer.rule(
+            "objcopy",
+            command="$OBJCOPY -O binary $in $out",
+            description="Copying binary $out",
+        )
+
         writer.subninja(f"{TOOLS_DIR}/gbagfx/build.ninja")
         writer.subninja(f"{TOOLS_DIR}/mid2agb/build.ninja")
         writer.subninja(f"{PATCH_DIR}/build.ninja")
@@ -441,7 +451,7 @@ def main():
             writer.build(
                 "ld",
                 inputs=all_objects,
-                outputs=BLOB_OBJECT,
+                outputs=OUTPUT_ELF,
                 variables={
                     "LD": TARGET_LD,
                     "LDFLAGS": LDFLAGS,
@@ -449,18 +459,25 @@ def main():
             )
 
             writer.build(
-                "patchbin",
-                inputs=[BASE_ROM_FILE, BLOB_OBJECT],
-                outputs=OUT_ROM_FILE,
-                implicit_inputs=PATCHBIN,
-                variables={"PATCHBIN": PATCHBIN},
+                "nm",
+                inputs=OUTPUT_ELF,
+                outputs=OUTPUT_SYM,
+                variables={"NM": TARGET_NM},
             )
 
             writer.build(
-                "nm",
-                inputs=BLOB_OBJECT,
-                outputs="symbols.txt",
-                variables={"NM": TARGET_NM},
+                "objcopy",
+                inputs=OUTPUT_ELF,
+                outputs=OUTPUT_BIN,
+                variables={"OBJCOPY": TARGET_OBJCOPY},
+            )
+
+            writer.build(
+                "patchbin",
+                inputs=[INPUT_ROM, OUTPUT_BIN, OUTPUT_SYM],
+                outputs=OUTPUT_ROM,
+                implicit_inputs=PATCHBIN,
+                variables={"PATCHBIN": PATCHBIN},
             )
 
 if __name__ == "__main__": main()
