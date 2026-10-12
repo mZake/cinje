@@ -128,15 +128,6 @@ def as_list(input: Optional[Union[List[str], str]]) -> List[str]:
         return input
     return [input]
 
-def warning(message: str):
-    sys.stderr.write(f"generate.py: warning: {message}")
-    sys.stderr.write("\n")
-
-def fatal(message: str):
-    sys.stderr.write(f"generate.py: error: {message}")
-    sys.stderr.write("\n")
-    sys.exit(1)
-
 def collect_files(directory: str, extensions: Union[str, List[str]]) -> List[str]:
     matches = []
     for extension in as_list(extensions):
