@@ -152,7 +152,7 @@ def derive_files(inputs: Union[List[str], str], pattern: str) -> List[str]:
 
     return outputs
 
-def build_gfx(
+def build_graphics(
     writer: Writer,
     inputs: Union[List[str], str],
     outputs: Union[List[str], str]
@@ -166,7 +166,7 @@ def build_gfx(
             variables={"GBAGFX": GBAGFX},
         )
 
-def build_c(
+def build_c_object(
     writer: Writer,
     inputs: Union[List[str], str],
     outputs: Union[List[str], str],
@@ -187,7 +187,7 @@ def build_c(
             },
         )
 
-def build_asm(
+def build_asm_object(
     writer: Writer,
     inputs: Union[List[str], str],
     outputs: Union[List[str], str],
@@ -262,7 +262,7 @@ def build_c_project(
             },
         )
 
-def build_cxx_project(
+def build_cxx_object(
     directory: str,
     output: str,
     cxxflags: Optional[str] = None,
@@ -327,31 +327,31 @@ def main():
         ldflags="`pkg-config --libs libpng`",
     )
 
-    build_cxx_project(
+    build_cxx_object(
         "tools/mid2agb",
         output=MID2AGB,
         cxxflags="-std=c++11 -O2 -Wall -Wno-switch -Werror",
     )
 
-    build_cxx_project(
+    build_cxx_object(
         "tools/preproc",
         output=PREPROC,
         cxxflags="-std=c++11 -O2 -Wall -Wno-switch -Werror",
     )
 
-    build_cxx_project(
+    build_cxx_object(
         "tools/scaninc",
         output=SCANINC,
         cxxflags="-Wall -Werror -std=c++11 -O2",
     )
 
-    build_cxx_project(
+    build_cxx_object(
         "tools/wav2agb",
         output=WAV2AGB,
         cxxflags="-Wall -Werror -std=c++17 -O2",
     )
 
-    build_cxx_project(
+    build_cxx_object(
         "patch",
         output=PATCHBIN,
         cxxflags=f"-Wall -Wextra -std=c++17 -O2 -I {INC_DIR}",
@@ -433,16 +433,16 @@ def main():
 
         writer.newline()
 
-        build_gfx(writer, png_files, bpp1_files)
-        build_gfx(writer, png_files, bpp4_files)
-        build_gfx(writer, png_files, bpp8_files)
+        build_graphics(writer, png_files, bpp1_files)
+        build_graphics(writer, png_files, bpp4_files)
+        build_graphics(writer, png_files, bpp8_files)
 
-        build_gfx(writer, bpp1_files, bpp1_lz_files)
-        build_gfx(writer, bpp4_files, bpp4_lz_files)
-        build_gfx(writer, bpp8_files, bpp8_lz_files)
+        build_graphics(writer, bpp1_files, bpp1_lz_files)
+        build_graphics(writer, bpp4_files, bpp4_lz_files)
+        build_graphics(writer, bpp8_files, bpp8_lz_files)
 
-        build_c(writer, c_sources, c_objects, c_depfiles)
-        build_asm(writer, asm_sources, asm_objects, asm_depfiles)
+        build_c_object(writer, c_sources, c_objects, c_depfiles)
+        build_asm_object(writer, asm_sources, asm_objects, asm_depfiles)
 
         build_depfile(writer, c_sources, c_depfiles)
         build_depfile(writer, asm_sources, asm_depfiles)
