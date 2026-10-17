@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -35,10 +36,10 @@
 
 #define LOCATION            Location{__FILE__, __LINE__}
 
-#define PATCH_BYTES(...)    patch_bytes_at(LOCATION, __VA_ARGS__)
-#define PATCH_POINTER(...)  patch_pointer_at(LOCATION, __VA_ARGS__)
-#define PATCH_HOOK(...)     patch_hook_at(LOCATION, __VA_ARGS__)
-#define PATCH_FUNC(...)     patch_function_at(LOCATION, __VA_ARGS__)
+#define PATCH_BYTES(...)    patchbin->patch_bytes(LOCATION, __VA_ARGS__)
+#define PATCH_POINTER(...)  patchbin->patch_pointer(LOCATION, __VA_ARGS__)
+#define PATCH_HOOK(...)     patchbin->patch_hook(LOCATION, __VA_ARGS__)
+#define PATCH_FUNC(...)     patchbin->patch_function(LOCATION, __VA_ARGS__)
 
 class BufferParser
 {
@@ -92,22 +93,38 @@ struct Location
     int line = 0;
 };
 
-void patch_bytes_at(Location location, std::uint32_t offset,
-                    const std::vector<std::uint8_t>& bytes);
+class Patchbin
+{
+public:
+    Patchbin(int argc, char** argv);
 
-void patch_pointer_at(Location location, std::uint32_t offset,
-                      std::string_view symbol, bool is_thumb);
+    void patch_bytes(Location location, std::uint32_t offset,
+                     const std::vector<std::uint8_t>& bytes);
 
-void patch_hook_at(Location location, std::uint32_t offset,
-                   std::string_view symbol, std::uint8_t reg);
+    void patch_pointer(Location location, std::uint32_t offset,
+                       std::string_view symbol, bool is_thumb);
 
-void patch_function_at(Location location, std::uint32_t offset,
-                       std::string_view symbol, std::uint32_t params, bool returns);
+    void patch_hook(Location location, std::uint32_t offset,
+                    std::string_view symbol, std::uint8_t reg);
+
+    void patch_function(Location location, std::uint32_t offset,
+                        std::string_view symbol, std::uint32_t params, bool returns);
+
+    void finish();
+
+private:
+    std::uint32_t get_symbol_value(std::string_view symbol);
+
+private:
+    std::string m_base_image_path;
+    std::string m_output_image_path;
+    std::vector<std::uint8_t> m_image;
+    std::unordered_map<std::string, std::uint32_t> m_symbols;
+};
 
 #ifdef PATCHBIN_IMPLEMENTATION
 
-static std::unordered_map<std::string, std::uint32_t> s_symbols;
-static std::vector<std::uint8_t> s_image;
+static std::unique_ptr<Patchbin> patchbin;
 
 static void log_fatal_no_prefix(const char* format, std::va_list args);
 static void log_fatal_no_prefix(const char* format, ...);
@@ -122,7 +139,6 @@ static bool is_alpha_char(char c);
 static bool is_alnum_char(char c);
 
 static bool is_symbol_name_valid(std::string_view name);
-static std::uint32_t get_symbol_value(std::string_view name);
 
 static std::unordered_map<std::string, std::uint32_t> parse_symbol_list(const char* filepath);
 
@@ -247,16 +263,6 @@ static bool is_symbol_name_valid(std::string_view name)
     }
 
     return true;
-}
-
-static std::uint32_t get_symbol_value(std::string_view name)
-{
-    if (auto it = s_symbols.find(std::string(name)); it != s_symbols.end())
-    {
-        return it->second;
-    }
-
-    return 0;
 }
 
 static std::unordered_map<std::string, std::uint32_t> parse_symbol_list(const char* filepath)
@@ -451,20 +457,69 @@ void BufferBuilder::write_little_uint64(std::uint64_t value)
     write_uint64(HOST_TO_LITTLE64(value));
 }
 
-void patch_bytes_at(Location location, std::uint32_t offset,
-                    const std::vector<std::uint8_t>& bytes)
+struct ParsedArgs
 {
-    std::size_t range = bytes.size() + offset;
-    if (range >= s_image.size())
+    const char* base_image_path = nullptr;
+    const char* binary_path = nullptr;
+    const char* symbol_list_path = nullptr;
+    const char* output_image_path = nullptr;
+};
+
+static ParsedArgs parse_args(int argc, char** argv)
+{
+    if (argc != 5)
+    {
+        log_fatal_no_prefix("Usage: patchbin base-image binary symbol-list output-image");
+    }
+
+    // Skip executable path argument.
+    ++argv;
+
+    ParsedArgs args;
+    args.base_image_path = *argv++;
+    args.binary_path = *argv++;
+    args.symbol_list_path = *argv++;
+    args.output_image_path = *argv++;
+
+    return args;
+}
+
+Patchbin::Patchbin(int argc, char** argv)
+{
+    ParsedArgs args = parse_args(argc, argv);
+
+    m_base_image_path = args.base_image_path;
+    m_output_image_path = args.output_image_path;
+
+    m_image = read_binary_file(args.base_image_path);
+
+    m_symbols = parse_symbol_list(args.symbol_list_path);
+
+    std::vector<std::uint8_t> binary_data = read_binary_file(args.binary_path);
+
+    std::uint32_t offset_to_insert = get_symbol_value("OFFSET_TO_INSERT");
+    if (offset_to_insert + binary_data.size() >= m_image.size())
+    {
+        log_fatal("binary is out of range");
+    }
+
+    std::memcpy(m_image.data() + offset_to_insert,
+                binary_data.data(), binary_data.size());
+}
+
+void Patchbin::patch_bytes(Location location, std::uint32_t offset,
+                           const std::vector<std::uint8_t>& bytes)
+{
+    if (offset + bytes.size() >= m_image.size())
     {
         log_fatal("[%s:%d] patch is out of range", location.file, location.line);
     }
 
-    std::memcpy(s_image.data() + offset, bytes.data(), bytes.size());
+    std::memcpy(m_image.data() + offset, bytes.data(), bytes.size());
 }
 
-void patch_pointer_at(Location location, std::uint32_t offset,
-                      std::string_view symbol, bool is_thumb)
+void Patchbin::patch_pointer(Location location, std::uint32_t offset,
+                             std::string_view symbol, bool is_thumb)
 {
     std::uint32_t address = get_symbol_value(symbol);
     if (!address)
@@ -477,11 +532,11 @@ void patch_pointer_at(Location location, std::uint32_t offset,
     BufferBuilder builder;
     builder.write_little_uint32(address);
 
-    patch_bytes_at(location, offset, builder.buffer);
+    patch_bytes(location, offset, builder.buffer);
 }
 
-void patch_hook_at(Location location, std::uint32_t offset,
-                   std::string_view symbol, std::uint8_t reg)
+void Patchbin::patch_hook(Location location, std::uint32_t offset,
+                          std::string_view symbol, std::uint8_t reg)
 {
     std::uint32_t address = get_symbol_value(symbol);
     if (!address)
@@ -513,11 +568,11 @@ void patch_hook_at(Location location, std::uint32_t offset,
     }
     builder.write_little_uint32(address | 1);
 
-    patch_bytes_at(location, offset, builder.buffer);
+    patch_bytes(location, offset, builder.buffer);
 }
 
-void patch_function_at(Location location, std::uint32_t offset,
-                       std::string_view symbol, std::uint32_t params, bool returns)
+void Patchbin::patch_function(Location location, std::uint32_t offset,
+                              std::string_view symbol, std::uint32_t params, bool returns)
 {
     std::uint32_t address = get_symbol_value(symbol);
     if (!address)
@@ -538,58 +593,33 @@ void patch_function_at(Location location, std::uint32_t offset,
     builder.write_bytes({0x47, 0x20, 0x47});
     builder.write_little_uint32(address | 1);
 
-    patch_bytes_at(location, offset, builder.buffer);
+    patch_bytes(location, offset, builder.buffer);
+}
+
+void Patchbin::finish()
+{
+    write_binary_file(m_output_image_path.c_str(), m_image.data(), m_image.size());
+}
+
+std::uint32_t Patchbin::get_symbol_value(std::string_view symbol)
+{
+    if (auto it = m_symbols.find(std::string(symbol)); it != m_symbols.end())
+    {
+        return it->second;
+    }
+
+    return 0;
 }
 
 extern void patchbin_main();
 
-struct ParsedArgs
-{
-    const char* base_image_path = nullptr;
-    const char* binary_path = nullptr;
-    const char* symbol_list_path = nullptr;
-    const char* output_image_path = nullptr;
-};
-
-static ParsedArgs parse_args(int argc, char** argv)
-{
-    if (argc != 5)
-    {
-        log_fatal_no_prefix("Usage: patchbin base-image binary symbol-list output-image");
-    }
-
-    // Skip executable path argument.
-    ++argv;
-
-    ParsedArgs args;
-    args.base_image_path = *argv++;
-    args.binary_path = *argv++;
-    args.symbol_list_path = *argv++;
-    args.output_image_path = *argv++;
-
-    return args;
-}
-
 int main(int argc, char** argv)
 {
-    ParsedArgs args = parse_args(argc, argv);
-
-    s_symbols = parse_symbol_list(args.symbol_list_path);
-    s_image = read_binary_file(args.base_image_path);
-
-    std::uint32_t binary_offset = get_symbol_value("OFFSET_TO_INSERT");
-    auto binary = read_binary_file(args.binary_path);
-
-    if (binary.size() + binary_offset >= s_image.size())
-    {
-        log_fatal("binary is out of range");
-    }
-
-    std::memcpy(s_image.data() + binary_offset, binary.data(), binary.size());
+    patchbin = std::make_unique<Patchbin>(argc, argv);
 
     patchbin_main();
 
-    write_binary_file(args.output_image_path, s_image.data(), s_image.size());
+    patchbin->finish();
 }
 
 #endif
