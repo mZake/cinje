@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <cstdarg>
@@ -114,6 +115,9 @@ public:
 
 private:
     std::uint32_t get_symbol_value(std::string_view symbol);
+
+    bool copy_bytes_to_image(std::uint32_t offset,
+                             const std::vector<std::uint8_t>& bytes);
 
 private:
     std::string m_base_image_path;
@@ -495,27 +499,22 @@ Patchbin::Patchbin(int argc, char** argv)
 
     m_symbols = parse_symbol_list(args.symbol_list_path);
 
-    std::vector<std::uint8_t> binary_data = read_binary_file(args.binary_path);
-
+    std::vector<std::uint8_t> binary = read_binary_file(args.binary_path);
     std::uint32_t offset_to_insert = get_symbol_value("OFFSET_TO_INSERT");
-    if (offset_to_insert + binary_data.size() >= m_image.size())
+
+    if (!copy_bytes_to_image(offset_to_insert, binary))
     {
         log_fatal("binary is out of range");
     }
-
-    std::memcpy(m_image.data() + offset_to_insert,
-                binary_data.data(), binary_data.size());
 }
 
 void Patchbin::patch_bytes(Location location, std::uint32_t offset,
                            const std::vector<std::uint8_t>& bytes)
 {
-    if (offset + bytes.size() >= m_image.size())
+    if (!copy_bytes_to_image(offset, bytes))
     {
         log_fatal("[%s:%d] patch is out of range", location.file, location.line);
     }
-
-    std::memcpy(m_image.data() + offset, bytes.data(), bytes.size());
 }
 
 void Patchbin::patch_pointer(Location location, std::uint32_t offset,
@@ -609,6 +608,19 @@ std::uint32_t Patchbin::get_symbol_value(std::string_view symbol)
     }
 
     return 0;
+}
+
+bool Patchbin::copy_bytes_to_image(std::uint32_t offset,
+                                   const std::vector<std::uint8_t>& bytes)
+{
+    auto dest = m_image.begin() + offset;
+    if (dest >= m_image.end())
+    {
+        return false;
+    }
+
+    std::copy(bytes.begin(), bytes.end(), dest);
+    return true;
 }
 
 extern void patchbin_main();
