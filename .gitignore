@@ -1,6 +1,6 @@
 # Directories
-/__pycache__
-/build
+__pycache__/
+build*/
 
 # Ninja
 build.ninja
@@ -19,5 +19,3 @@ build.ninja
 
 # ROMs
 *.gba
-
-/symbols.txt
