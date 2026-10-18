@@ -94,6 +94,23 @@ struct Location
     int line = 0;
 };
 
+enum class PatchErrorCode
+{
+    None,
+    ImageBoundsExceeded,
+    SymbolNotFound,
+    TooManyParams,
+    UnknownRegister,
+};
+
+struct PatchError
+{
+    Location location;
+    PatchErrorCode code = PatchErrorCode::None;
+    int int_data = 0;
+    std::string string_data;
+};
+
 class Patchbin
 {
 public:
@@ -119,17 +136,26 @@ private:
     bool copy_bytes_to_image(std::uint32_t offset,
                              const std::vector<std::uint8_t>& bytes);
 
+    void report_image_bounds_exceeded(Location location);
+    void report_symbol_not_found(Location location, std::string_view symbol);
+    void report_too_many_params(Location location, std::uint32_t params);
+    void report_unknown_register(Location location, std::uint8_t reg);
+
+    bool process_patch_errors();
+
 private:
     std::string m_base_image_path;
     std::string m_output_image_path;
     std::vector<std::uint8_t> m_image;
     std::unordered_map<std::string, std::uint32_t> m_symbols;
+    std::vector<PatchError> m_patch_errors;
 };
 
 #ifdef PATCHBIN_IMPLEMENTATION
 
 static std::unique_ptr<Patchbin> patchbin;
 
+static void log_error(Location location, const char* format ...);
 static void log_fatal_no_prefix(const char* format, std::va_list args);
 static void log_fatal_no_prefix(const char* format, ...);
 static void log_fatal(const char* format, ...);
@@ -145,6 +171,18 @@ static bool is_alnum_char(char c);
 static bool is_symbol_name_valid(std::string_view name);
 
 static std::unordered_map<std::string, std::uint32_t> parse_symbol_list(const char* filepath);
+
+static void log_error(Location location, const char* format ...)
+{
+    std::va_list args;
+    va_start(args, format);
+
+    std::fprintf(stderr, "patchbin: %s(%d): ", location.file, location.line);
+    std::vfprintf(stderr, format, args);
+    std::fprintf(stderr, "\n");
+
+    va_end(args);
+}
 
 static void log_fatal_no_prefix(const char* format, std::va_list args)
 {
@@ -513,7 +551,7 @@ void Patchbin::patch_bytes(Location location, std::uint32_t offset,
 {
     if (!copy_bytes_to_image(offset, bytes))
     {
-        log_fatal("[%s:%d] patch is out of range", location.file, location.line);
+        report_image_bounds_exceeded(location);
     }
 }
 
@@ -523,7 +561,8 @@ void Patchbin::patch_pointer(Location location, std::uint32_t offset,
     std::uint32_t address = get_symbol_value(symbol);
     if (!address)
     {
-        log_fatal("[%s:%d] symbol not found: %s", location.file, location.line, symbol.data());
+        report_symbol_not_found(location, symbol);
+        return;
     }
  
     address = is_thumb ? (address | 1) : (address & ~1);
@@ -540,12 +579,14 @@ void Patchbin::patch_hook(Location location, std::uint32_t offset,
     std::uint32_t address = get_symbol_value(symbol);
     if (!address)
     {
-        log_fatal("[%s:%d] symbol not found: %s", location.file, location.line, symbol.data());
+        report_symbol_not_found(location, symbol);
+        return;
     }
 
     if (reg > 15)
     {
-        log_fatal("[%s:%d] invalid register: r%u", location.file, location.line, reg);
+        report_unknown_register(location, reg);
+        return;
     }
 
     std::uint8_t reg_bits = reg & 7;
@@ -576,12 +617,14 @@ void Patchbin::patch_function(Location location, std::uint32_t offset,
     std::uint32_t address = get_symbol_value(symbol);
     if (!address)
     {
-        log_fatal("[%s:%d] symbol not found: %s", location.file, location.line, symbol.data());
+        report_symbol_not_found(location, symbol);
+        return;
     }
 
     if (params > 4)
     {
-        log_fatal("[%s:%d]: unsupported number of parameters: %u", params, location.file, location.line);
+        report_too_many_params(location, params);
+        return;
     }
 
     BufferBuilder builder;
@@ -597,7 +640,10 @@ void Patchbin::patch_function(Location location, std::uint32_t offset,
 
 void Patchbin::finish()
 {
-    write_binary_file(m_output_image_path.c_str(), m_image.data(), m_image.size());
+    if (process_patch_errors())
+    {
+        write_binary_file(m_output_image_path.c_str(), m_image.data(), m_image.size());
+    }
 }
 
 std::uint32_t Patchbin::get_symbol_value(std::string_view symbol)
@@ -621,6 +667,90 @@ bool Patchbin::copy_bytes_to_image(std::uint32_t offset,
 
     std::copy(bytes.begin(), bytes.end(), dest);
     return true;
+}
+
+void Patchbin::report_image_bounds_exceeded(Location location)
+{
+    PatchError error{
+        location,
+        PatchErrorCode::ImageBoundsExceeded,
+        0,
+        ""
+    };
+    m_patch_errors.push_back(std::move(error));
+}
+
+void Patchbin::report_symbol_not_found(Location location, std::string_view symbol)
+{
+    PatchError error{
+        location,
+        PatchErrorCode::SymbolNotFound,
+        0,
+        std::string(symbol),
+    };
+    m_patch_errors.push_back(std::move(error));
+}
+
+void Patchbin::report_too_many_params(Location location, std::uint32_t params)
+{
+    PatchError error{
+        location,
+        PatchErrorCode::TooManyParams,
+        static_cast<int>(params),
+        ""
+    };
+    m_patch_errors.push_back(std::move(error));
+}
+
+void Patchbin::report_unknown_register(Location location, std::uint8_t reg)
+{
+    PatchError error{
+        location,
+        PatchErrorCode::UnknownRegister,
+        static_cast<int>(reg),
+        ""
+    };
+    m_patch_errors.push_back(std::move(error));
+}
+
+bool Patchbin::process_patch_errors()
+{
+    if (m_patch_errors.empty())
+    {
+        return true;
+    }
+
+    for (const auto& error : m_patch_errors)
+    {
+        switch (error.code)
+        {
+            case PatchErrorCode::ImageBoundsExceeded:
+                log_error(error.location,
+                          "patch exceeds '%s' bounds",
+                          m_base_image_path.c_str());
+                break;
+            case PatchErrorCode::SymbolNotFound:
+                log_error(error.location,
+                          "symbol '%s' not found",
+                          error.string_data.c_str());
+                break;
+            case PatchErrorCode::TooManyParams:
+                log_error(error.location,
+                          "expected at most 4 parameters, got %d",
+                          error.int_data);
+                break;
+            case PatchErrorCode::UnknownRegister:
+                log_error(error.location,
+                          "unknown register 'r%d'",
+                          error.int_data);
+                break;
+            case PatchErrorCode::None:
+            default:
+                break;
+        }
+    }
+
+    return false;
 }
 
 extern void patchbin_main();
