@@ -647,10 +647,12 @@ void Patchbin::patch_function(Location location, std::uint32_t offset,
 
 void Patchbin::finish()
 {
-    if (process_patch_errors())
+    if (!process_patch_errors())
     {
-        write_binary_file(m_output_image_path.c_str(), m_image.data(), m_image.size());
+        std::exit(EXIT_FAILURE);
     }
+
+    write_binary_file(m_output_image_path.c_str(), m_image.data(), m_image.size());
 }
 
 std::uint32_t Patchbin::get_symbol_value(std::string_view symbol)
