@@ -35,12 +35,19 @@
     #define HOST_TO_LITTLE64(x) (x)
 #endif
 
-#define LOCATION            Location{__FILE__, __LINE__}
+#define LOCATION Location{__FILE__, __LINE__}
 
-#define PATCH_BYTES(...)    patchbin->patch_bytes(LOCATION, __VA_ARGS__)
-#define PATCH_POINTER(...)  patchbin->patch_pointer(LOCATION, __VA_ARGS__)
-#define PATCH_HOOK(...)     patchbin->patch_hook(LOCATION, __VA_ARGS__)
-#define PATCH_FUNC(...)     patchbin->patch_function(LOCATION, __VA_ARGS__)
+#define PATCH_BYTES(offset, bytes) \
+    patchbin->patch_bytes(LOCATION, offset, bytes)
+
+#define PATCH_POINTER(offset, symbol, is_thumb) \
+    patchbin->patch_pointer(LOCATION, offset, symbol, is_thumb)
+
+#define PATCH_HOOK(offset, symbol, reg) \
+    patchbin->patch_hook(LOCATION, offset, symbol, reg)
+
+#define PATCH_FUNC(offset, symbol, params, returns) \
+    patchbin->patch_function(LOCATION, offset, symbol, params, returns)
 
 class BufferParser
 {
